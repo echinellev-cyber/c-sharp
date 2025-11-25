@@ -330,7 +330,7 @@ namespace BiometricsFingerprint
         {
             try
             {
-                string connectionString = "server=localhost;user id=root;password=;database=biometric;SslMode=None;";
+                string connectionString = DatabaseConfig.ConnectionString;
 
                 string byteQuery = @"SELECT student_name, uid, fingerprint_data, course
                            FROM register_student 
@@ -639,7 +639,7 @@ namespace BiometricsFingerprint
         {
             try
             {
-                string connectionString = "server=localhost;user id=root;password=;database=biometric;SslMode=None;";
+                string connectionString = DatabaseConfig.ConnectionString;
 
                 // Check if student exists AND check fingerprint status
                 string checkQuery = @"SELECT COUNT(*) as count, 

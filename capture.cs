@@ -149,7 +149,7 @@ namespace BiometricsFingerprint
         {
             try
             {
-                string connectionString = "server=localhost;user=root;password=;database=biometric;";
+                string connectionString = DatabaseConfig.ConnectionString;
                 string query = @"SELECT uid, student_name, course, year_level, department, 
                                         fingerprint_data, LENGTH(fingerprint_data) as template_size
                                  FROM register_student 
@@ -289,7 +289,7 @@ namespace BiometricsFingerprint
                 }
 
                 // Save to database without fingerprint (use NULL instead of empty bytes)
-                string connectionString = "server=localhost;user id=root;password=;database=biometric;SslMode=None;";
+                string connectionString = DatabaseConfig.ConnectionString;
 
                 // Check if student already exists
                 string checkQuery = "SELECT COUNT(*) FROM register_student WHERE uid = @uid";
@@ -628,7 +628,7 @@ namespace BiometricsFingerprint
         {
             try
             {
-                string connectionString = "server=localhost;user=root;password=;database=biometric;";
+                string connectionString = DatabaseConfig.ConnectionString;
 
                 using (MySqlConnection connection = new MySqlConnection(connectionString))
                 {
@@ -648,7 +648,7 @@ namespace BiometricsFingerprint
 
             try
             {
-                string connectionString = "server=localhost;user=root;password=;database=biometric;";
+                string connectionString = DatabaseConfig.ConnectionString;
 
                 using (MySqlConnection connection = new MySqlConnection(connectionString))
                 {
@@ -672,7 +672,7 @@ namespace BiometricsFingerprint
         {
             try
             {
-                string connectionString = "server=localhost;user=root;password=;database=biometric;";
+                string connectionString = DatabaseConfig.ConnectionString;
                 using (MySqlConnection connection = new MySqlConnection(connectionString))
                 {
                     connection.Open();
@@ -1266,7 +1266,7 @@ namespace BiometricsFingerprint
         {
             try
             {
-                string connectionString = "server=localhost;user=root;password=;database=biometric;";
+                string connectionString = DatabaseConfig.ConnectionString;
                 string query = "SELECT student_name, uid, fingerprint_data FROM register_student WHERE fingerprint_data IS NOT NULL AND LENGTH(fingerprint_data) > 0";
 
                 using (MySqlConnection connection = new MySqlConnection(connectionString))

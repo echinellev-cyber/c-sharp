@@ -15,7 +15,7 @@ namespace BiometricsFingerprint
 {
     public partial class events : Form
     {
-        private string connectionString = "server=localhost;user=root;password=;database=biometric;";
+        private readonly string connectionString = DatabaseConfig.ConnectionString;
         private ListView attendanceListView;
 
         // Multiple scanner support

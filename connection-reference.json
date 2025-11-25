@@ -1,0 +1,66 @@
+{
+  "connectionString": {
+    "config": {
+      "file": "App.config",
+      "name": "BiometricDb",
+      "value": "server=72.60.233.70;port=9009;database=biometric;user id=root;password=MiW2BwTxrwHuQ66XFEOSVnR8kmVTUeErc7mh9DYiKltBH5cZofSCRTjv27rCliwn;"
+    },
+    "accessor": {
+      "file": "DatabaseConfig.cs",
+      "line": 7,
+      "member": "DatabaseConfig.ConnectionString"
+    },
+    "consumers": [
+      {
+        "file": "events.cs",
+        "line": 18,
+        "usage": "Events form field"
+      },
+      {
+        "file": "verify.cs",
+        "line": 99,
+        "usage": "CheckForMatch"
+      },
+      {
+        "file": "register.cs",
+        "line": 333,
+        "usage": "CheckFingerprintDuplicate"
+      },
+      {
+        "file": "register.cs",
+        "line": 642,
+        "usage": "SaveToDatabase"
+      },
+      {
+        "file": "capture.cs",
+        "line": 152,
+        "usage": "SearchStudent"
+      },
+      {
+        "file": "capture.cs",
+        "line": 292,
+        "usage": "AddStudentWithoutFingerprint"
+      },
+      {
+        "file": "capture.cs",
+        "line": 631,
+        "usage": "TestMySQLConnection"
+      },
+      {
+        "file": "capture.cs",
+        "line": 651,
+        "usage": "LoadMySQLData"
+      },
+      {
+        "file": "capture.cs",
+        "line": 675,
+        "usage": "LoadCoursesIntoComboBox"
+      },
+      {
+        "file": "capture.cs",
+        "line": 1269,
+        "usage": "IsFingerprintDuplicate"
+      }
+    ]
+  }
+}

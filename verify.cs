@@ -96,7 +96,7 @@ namespace BiometricsFingerprint
 
         private void CheckForMatch(DPFP.FeatureSet features)
         {
-            string connectionString = "server=localhost;user id=root;password=;database=biometric;SslMode=None;";
+            string connectionString = DatabaseConfig.ConnectionString;
             string query = "SELECT uid, student_name, course, year_level, fingerprint_data FROM register_student";
 
             try

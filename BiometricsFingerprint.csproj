@@ -157,6 +157,7 @@
     <Compile Include="verify.Designer.cs">
       <DependentUpon>verify.cs</DependentUpon>
     </Compile>
+    <Compile Include="DatabaseConfig.cs" />
     <EmbeddedResource Include="capture.resx">
       <DependentUpon>capture.cs</DependentUpon>
     </EmbeddedResource>
