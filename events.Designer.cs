@@ -147,7 +147,7 @@
             this.start_scan.TabIndex = 9;
             this.start_scan.Text = "Start Scan";
             this.start_scan.UseVisualStyleBackColor = false;
-           // this.start_scan.Click += new System.EventHandler(this.start_scan_Click_1);
+            this.start_scan.Click += new System.EventHandler(this.start_scan_Click_1);
             // 
             // comboBox1
             // 
