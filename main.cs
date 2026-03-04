@@ -2,6 +2,9 @@
 using System;
 using System.Windows.Forms;
 using System.Drawing.Text;
+using MySql.Data.MySqlClient;
+using System.Drawing;
+using System.Threading.Tasks;
 
 namespace BiometricsFingerprint
 {
@@ -9,11 +12,21 @@ namespace BiometricsFingerprint
     public partial class main : Form
     {
         private DPFP.Template Template;
+        private Label lblDbStatus;
 
         public main()
         {
             InitializeComponent();
             this.Resize += main_Resize; // Handle resizing
+            
+            // Initialize Status Label
+            lblDbStatus = new Label();
+            lblDbStatus.AutoSize = true;
+            lblDbStatus.Font = new Font("Segoe UI", 12F, FontStyle.Bold);
+            lblDbStatus.Location = new Point(20, 20);
+            lblDbStatus.Text = "Checking Database Connection...";
+            lblDbStatus.ForeColor = Color.Orange;
+            this.Controls.Add(lblDbStatus);
         }
 
         private void OnTemplate(DPFP.Template template)
@@ -36,7 +49,7 @@ namespace BiometricsFingerprint
         {
             register EnFrm = new register();
             EnFrm.OnTemplate += this.OnTemplate;
-            EnFrm.Show(this);
+            EnFrm.Show(); // Removed 'this' to allow independent window navigation
         }
 
         private void verify_btn_Click(object sender, EventArgs e)
@@ -44,7 +57,7 @@ namespace BiometricsFingerprint
             try
             {
                 verify verifyForm = new verify();
-                verifyForm.ShowDialog(this);
+                verifyForm.Show();
             }
             catch (Exception ex)
             {
@@ -59,6 +72,65 @@ namespace BiometricsFingerprint
 
             PositionButtonsRight();
             this.Resize += main_Resize;
+            
+            // Check DB Connection asynchronously
+            CheckDatabaseConnection();
+        }
+
+        private async void CheckDatabaseConnection()
+        {
+            lblDbStatus.Text = "Connecting to Database...";
+            lblDbStatus.ForeColor = Color.Orange;
+
+            await Task.Run(() =>
+            {
+                try
+                {
+                    using (MySqlConnection conn = new MySqlConnection(DatabaseConfig.ConnectionString))
+                    {
+                        conn.Open();
+                        this.Invoke(new Action(() =>
+                        {
+                            lblDbStatus.Text = "✅ Database Connected";
+                            lblDbStatus.ForeColor = Color.Green;
+                        }));
+                    }
+                }
+                catch (MySqlException myEx)
+                {
+                    this.Invoke(new Action(() =>
+                    {
+                        lblDbStatus.Text = $"❌ Error {myEx.Number}";
+                        lblDbStatus.ForeColor = Color.Red;
+
+                        // Show EXACT error from the engine without speculation
+                        string msg = $"Database Error Code: {myEx.Number}\n\nSystem Message:\n{myEx.Message}";
+                        
+                        MessageBox.Show(msg, "Connection Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+
+                        ToolTip tt = new ToolTip();
+                        tt.SetToolTip(lblDbStatus, myEx.Message);
+                        lblDbStatus.Cursor = Cursors.Hand;
+                        lblDbStatus.Click += (s, e) => MessageBox.Show(msg, "Database Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }));
+                }
+                catch (Exception ex)
+                {
+                    this.Invoke(new Action(() =>
+                    {
+                        lblDbStatus.Text = "❌ Connection Failed";
+                        lblDbStatus.ForeColor = Color.Red;
+                        
+                        MessageBox.Show($"System Error:\n{ex.Message}", "Connection Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        
+                        // Optional: Add tooltip or click event to see error
+                        ToolTip tt = new ToolTip();
+                        tt.SetToolTip(lblDbStatus, ex.Message);
+                        lblDbStatus.Cursor = Cursors.Hand;
+                        lblDbStatus.Click += (s, e) => MessageBox.Show($"Connection Error:\n{ex.Message}", "Database Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }));
+                }
+            });
         }
 
         private void main_Resize(object sender, EventArgs e)
@@ -93,7 +165,7 @@ namespace BiometricsFingerprint
             try
             {
                 events attendanceForm = new events();
-                attendanceForm.ShowDialog(this);
+                attendanceForm.Show();
             }
             catch (Exception ex)
             {

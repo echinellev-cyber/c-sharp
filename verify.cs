@@ -68,13 +68,18 @@ namespace BiometricsFingerprint
         }
 
         // The rest of your existing code remains the same...
+        private bool _isVerifying = false;
+
         protected override void Process(Sample sample)
         {
+            if (_isVerifying) return; // Prevent overlapping verifications
+            
             base.Process(sample);
             SafeMakeReport("Processing fingerprint...");
 
             try
             {
+                _isVerifying = true;
                 // Extract features for VERIFICATION
                 var features = ExtractFeatures(sample, DPFP.Processing.DataPurpose.Verification);
 
@@ -92,12 +97,16 @@ namespace BiometricsFingerprint
             {
                 SafeMakeReport($"Error: {ex.Message}");
             }
+            finally
+            {
+                _isVerifying = false;
+            }
         }
 
         private void CheckForMatch(DPFP.FeatureSet features)
         {
             string connectionString = DatabaseConfig.ConnectionString;
-            string query = "SELECT uid, student_name, course, year_level, fingerprint_data FROM register_student";
+            string query = "SELECT uid, student_name, course, year_level, department, fingerprint_data FROM register_student";
 
             try
             {
@@ -114,6 +123,7 @@ namespace BiometricsFingerprint
                             string name = reader["student_name"].ToString();
                             string course = reader["course"].ToString();
                             string year = reader["year_level"].ToString();
+                            string department = reader["department"]?.ToString() ?? "";
 
                             // Convert numeric year to display format
                             string yearDisplay = GetYearLevelDisplay(year);
@@ -127,12 +137,12 @@ namespace BiometricsFingerprint
                                     {
                                         this.Invoke(new Action(() =>
                                         {
-                                            OnMatchFound(name, uid, course, yearDisplay);
+                                            OnMatchFound(name, uid, course, yearDisplay, department);
                                         }));
                                     }
                                     else
                                     {
-                                        OnMatchFound(name, uid, course, yearDisplay);
+                                        OnMatchFound(name, uid, course, yearDisplay, department);
                                     }
                                     return;
                                 }
@@ -189,11 +199,12 @@ namespace BiometricsFingerprint
             }
         }
 
-        private void OnMatchFound(string name, string uid, string course, string yearDisplay)
+        private void OnMatchFound(string name, string uid, string course, string yearDisplay, string department)
         {
             SafeMakeReport($"✓ VERIFICATION SUCCESSFUL!");
             SafeMakeReport($"Student: {name}");
             SafeMakeReport($"UID: {uid}");
+            SafeMakeReport($"Department: {department}");
             SafeMakeReport($"Course: {course}");
             SafeMakeReport($"Year: {yearDisplay}");
 
@@ -202,16 +213,17 @@ namespace BiometricsFingerprint
             SetVerifiedName(name);
             SetVerifiedCourse(course);
             SetVerifiedYear(yearDisplay);
+            SetVerifiedDepartment(department);
 
             // CREATE CUSTOM GREEN DIALOG
-            ShowGreenSuccessDialog(name, uid, course, yearDisplay);
+            ShowGreenSuccessDialog(name, uid, course, yearDisplay, department);
         }
 
-        private void ShowGreenSuccessDialog(string name, string uid, string course, string yearDisplay)
+        private void ShowGreenSuccessDialog(string name, string uid, string course, string yearDisplay, string department)
         {
             if (this.InvokeRequired)
             {
-                this.Invoke(new Action(() => ShowGreenSuccessDialog(name, uid, course, yearDisplay)));
+                this.Invoke(new Action(() => ShowGreenSuccessDialog(name, uid, course, yearDisplay, department)));
                 return;
             }
 
@@ -219,7 +231,7 @@ namespace BiometricsFingerprint
             Form greenDialog = new Form()
             {
                 Text = "Verification Successful",
-                Size = new System.Drawing.Size(450, 300),
+                Size = new System.Drawing.Size(450, 350), // Increased height for extra field
                 StartPosition = FormStartPosition.CenterScreen,
                 FormBorderStyle = FormBorderStyle.FixedDialog,
                 MaximizeBox = false,
@@ -257,13 +269,22 @@ namespace BiometricsFingerprint
                 Location = new System.Drawing.Point(20, 90)
             };
 
+            Label deptLabel = new Label()
+            {
+                Text = $"Dept: {department}",
+                Font = new System.Drawing.Font("Arial", 11),
+                ForeColor = System.Drawing.Color.White,
+                AutoSize = true,
+                Location = new System.Drawing.Point(20, 120)
+            };
+
             Label courseLabel = new Label()
             {
                 Text = $"Course: {course}",
                 Font = new System.Drawing.Font("Arial", 11),
                 ForeColor = System.Drawing.Color.White,
                 AutoSize = true,
-                Location = new System.Drawing.Point(20, 120)
+                Location = new System.Drawing.Point(20, 150)
             };
 
             Label yearLabel = new Label()
@@ -272,7 +293,7 @@ namespace BiometricsFingerprint
                 Font = new System.Drawing.Font("Arial", 11),
                 ForeColor = System.Drawing.Color.White,
                 AutoSize = true,
-                Location = new System.Drawing.Point(20, 150)
+                Location = new System.Drawing.Point(20, 180)
             };
 
             // Add OK button
@@ -280,7 +301,7 @@ namespace BiometricsFingerprint
             {
                 Text = "OK",
                 Size = new System.Drawing.Size(100, 35),
-                Location = new System.Drawing.Point(165, 190),
+                Location = new System.Drawing.Point(165, 230),
                 BackColor = System.Drawing.Color.White,
                 ForeColor = System.Drawing.Color.LimeGreen,
                 Font = new System.Drawing.Font("Arial", 10, System.Drawing.FontStyle.Bold),
@@ -297,6 +318,7 @@ namespace BiometricsFingerprint
             greenDialog.Controls.Add(titleLabel);
             greenDialog.Controls.Add(nameLabel);
             greenDialog.Controls.Add(uidLabel);
+            greenDialog.Controls.Add(deptLabel);
             greenDialog.Controls.Add(courseLabel);
             greenDialog.Controls.Add(yearLabel);
             greenDialog.Controls.Add(okButton);
@@ -307,8 +329,12 @@ namespace BiometricsFingerprint
             // Show dialog and close form when OK is clicked
             if (greenDialog.ShowDialog() == DialogResult.OK)
             {
-                this.DialogResult = DialogResult.OK;
-                this.Close();
+                // this.DialogResult = DialogResult.OK; // Removed to keep window open
+                // this.Close(); // Removed to keep window open
+                
+                // Optional: Clear fields or reset status for next scan
+                SetStatus("Ready to scan fingerprint");
+                SafeMakeReport("Place your finger on the scanner");
             }
         }
 
@@ -352,19 +378,29 @@ namespace BiometricsFingerprint
             {
                 this.Invoke(new Action(() =>
                 {
-                    var courseControl = this.Controls.Find("listBox1", true).FirstOrDefault();
-                    if (courseControl is ListBox listBox)
+                    var courseControl = this.Controls.Find("comboBox1", true).FirstOrDefault();
+                    if (courseControl is ComboBox comboBox)
                     {
-                        listBox.SelectedItem = course;
+                        // Check if item exists, if not add it
+                        if (!comboBox.Items.Contains(course))
+                        {
+                            comboBox.Items.Add(course);
+                        }
+                        comboBox.SelectedItem = course;
                     }
                 }));
             }
             else
             {
-                var courseControl = this.Controls.Find("listBox1", true).FirstOrDefault();
-                if (courseControl is ListBox listBox)
+                var courseControl = this.Controls.Find("comboBox1", true).FirstOrDefault();
+                if (courseControl is ComboBox comboBox)
                 {
-                    listBox.SelectedItem = course;
+                    // Check if item exists, if not add it
+                    if (!comboBox.Items.Contains(course))
+                    {
+                        comboBox.Items.Add(course);
+                    }
+                    comboBox.SelectedItem = course;
                 }
             }
         }
@@ -375,19 +411,62 @@ namespace BiometricsFingerprint
             {
                 this.Invoke(new Action(() =>
                 {
-                    var yearControl = this.Controls.Find("listBox2", true).FirstOrDefault();
-                    if (yearControl is ListBox listBox)
+                    var yearControl = this.Controls.Find("comboBox2", true).FirstOrDefault();
+                    if (yearControl is ComboBox comboBox)
                     {
-                        listBox.SelectedItem = yearDisplay;
+                        // Check if item exists, if not add it
+                        if (!comboBox.Items.Contains(yearDisplay))
+                        {
+                            comboBox.Items.Add(yearDisplay);
+                        }
+                        comboBox.SelectedItem = yearDisplay;
                     }
                 }));
             }
             else
             {
-                var yearControl = this.Controls.Find("listBox2", true).FirstOrDefault();
-                if (yearControl is ListBox listBox)
+                var yearControl = this.Controls.Find("comboBox2", true).FirstOrDefault();
+                if (yearControl is ComboBox comboBox)
                 {
-                    listBox.SelectedItem = yearDisplay;
+                    // Check if item exists, if not add it
+                    if (!comboBox.Items.Contains(yearDisplay))
+                    {
+                        comboBox.Items.Add(yearDisplay);
+                    }
+                    comboBox.SelectedItem = yearDisplay;
+                }
+            }
+        }
+
+        private void SetVerifiedDepartment(string department)
+        {
+            if (this.InvokeRequired)
+            {
+                this.Invoke(new Action(() =>
+                {
+                    var deptControl = this.Controls.Find("comboBox3", true).FirstOrDefault();
+                    if (deptControl is ComboBox comboBox)
+                    {
+                        // Check if item exists, if not add it
+                        if (!comboBox.Items.Contains(department))
+                        {
+                            comboBox.Items.Add(department);
+                        }
+                        comboBox.SelectedItem = department;
+                    }
+                }));
+            }
+            else
+            {
+                var deptControl = this.Controls.Find("comboBox3", true).FirstOrDefault();
+                if (deptControl is ComboBox comboBox)
+                {
+                    // Check if item exists, if not add it
+                    if (!comboBox.Items.Contains(department))
+                    {
+                        comboBox.Items.Add(department);
+                    }
+                    comboBox.SelectedItem = department;
                 }
             }
         }

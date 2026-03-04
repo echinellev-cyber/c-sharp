@@ -43,8 +43,12 @@ namespace BiometricsFingerprint
             }
         }
 
+        private bool _isRegistering = false;
+
         protected override void Process(DPFP.Sample Sample)
         {
+            if (_isRegistering) return; // Prevent overlapping registration processing
+            
             base.Process(Sample);
 
             DPFP.FeatureSet features = ExtractFeatures(Sample, DPFP.Processing.DataPurpose.Enrollment);
@@ -53,13 +57,29 @@ namespace BiometricsFingerprint
             {
                 try
                 {
+                    _isRegistering = true;
                     SafeMakeReport("✓ Fingerprint features extracted");
                     Enroller.AddFeatures(features);
                 }
+                catch (Exception ex)
+                {
+                     SafeMakeReport($"Error adding features: {ex.Message}");
+                }
                 finally
                 {
-                    UpdateStatus();
-                    HandleEnrollmentResult();
+                    try 
+                    {
+                        UpdateStatus();
+                        HandleEnrollmentResult();
+                    }
+                    finally
+                    {
+                        // Only release lock if we are NOT in the middle of a DB save
+                        // HandleEnrollmentResult calls HandleSuccessfulEnrollment which calls SaveToDatabase
+                        // We need to manage the flag carefully.
+                        // Actually, HandleEnrollmentResult is synchronous.
+                        _isRegistering = false;
+                    }
                 }
             }
         }
@@ -103,153 +123,22 @@ namespace BiometricsFingerprint
                         SafeMakeReport("✗ FINGERPRINT DUPLICATE DETECTED!");
 
                         // Show blocking error message
-                        if (this.InvokeRequired)
+                        if (this.IsHandleCreated && !this.IsDisposed)
                         {
-                            this.Invoke(new Action(() =>
+                            if (this.InvokeRequired)
                             {
-                                using (var errorForm = new Form())
+                                this.Invoke(new Action(() =>
                                 {
-                                    errorForm.Text = "DUPLICATE FINGERPRINT DETECTED";
-                                    errorForm.Size = new Size(600, 400);
-                                    errorForm.StartPosition = FormStartPosition.CenterParent;
-                                    errorForm.BackColor = Color.FromArgb(255, 240, 240);
-                                    errorForm.FormBorderStyle = FormBorderStyle.FixedDialog;
-                                    errorForm.MaximizeBox = false;
-                                    errorForm.MinimizeBox = false;
-
-                                    // Create fonts
-                                    Font poppinsFont = new Font("Segoe UI", 11, FontStyle.Regular);
-                                    Font poppinsBold = new Font("Segoe UI", 11, FontStyle.Bold);
-                                    Font poppinsTitle = new Font("Segoe UI", 14, FontStyle.Bold);
-
-                                    // Header panel with background
-                                    Panel headerPanel = new Panel();
-                                    headerPanel.BackColor = Color.FromArgb(255, 200, 200);
-                                    headerPanel.Size = new Size(600, 70);
-                                    headerPanel.Location = new Point(0, 0);
-                                    errorForm.Controls.Add(headerPanel);
-
-                                    // Title label
-                                    Label titleLabel = new Label();
-                                    titleLabel.Text = "✗ DUPLICATE FINGERPRINT DETECTED";
-                                    titleLabel.Font = poppinsTitle;
-                                    titleLabel.ForeColor = Color.FromArgb(200, 0, 0);
-                                    titleLabel.AutoSize = true;
-                                    titleLabel.Location = new Point(20, 25);
-                                    errorForm.Controls.Add(titleLabel);
-                                    titleLabel.BringToFront();
-
-                                    // Main message label
-                                    Label messageLabel = new Label();
-                                    messageLabel.Text = "This fingerprint is already registered to another student!";
-                                    messageLabel.Font = poppinsBold;
-                                    messageLabel.ForeColor = Color.Black;
-                                    messageLabel.AutoSize = false;
-                                    messageLabel.Size = new Size(560, 30);
-                                    messageLabel.Location = new Point(20, 90);
-                                    messageLabel.TextAlign = ContentAlignment.MiddleLeft;
-                                    errorForm.Controls.Add(messageLabel);
-
-                                    // Details section with the duplicate info
-                                    Label detailsLabel = new Label();
-                                    detailsLabel.Text = $"Duplicate Found:\n{duplicateInfo}\n\nThis fingerprint cannot be registered to multiple students.\nRegistration blocked.";
-                                    detailsLabel.Font = poppinsFont;
-                                    detailsLabel.ForeColor = Color.Black;
-                                    detailsLabel.AutoSize = false;
-                                    detailsLabel.Size = new Size(560, 180);
-                                    detailsLabel.Location = new Point(20, 130);
-                                    detailsLabel.TextAlign = ContentAlignment.TopLeft;
-                                    errorForm.Controls.Add(detailsLabel);
-
-                                    // OK button
-                                    Button okButton = new Button();
-                                    okButton.Text = "OK";
-                                    okButton.Size = new Size(120, 40);
-                                    okButton.Location = new Point(240, 320);
-                                    okButton.Font = poppinsBold;
-                                    okButton.BackColor = Color.FromArgb(200, 0, 0);
-                                    okButton.ForeColor = Color.White;
-                                    okButton.FlatStyle = FlatStyle.Flat;
-                                    okButton.FlatAppearance.BorderSize = 0;
-                                    okButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(220, 0, 0);
-                                    okButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(180, 0, 0);
-                                    okButton.Cursor = Cursors.Hand;
-                                    okButton.DialogResult = DialogResult.OK;
-                                    errorForm.Controls.Add(okButton);
-
-                                    errorForm.AcceptButton = okButton;
-                                    errorForm.ShowDialog();
-                                }
-                            }));
-                        }
-                        else
-                        {
-                            using (var errorForm = new Form())
+                                    if (this.IsDisposed || !this.IsHandleCreated) return;
+                                    ShowDuplicateDialog(duplicateInfo);
+                                }));
+                            }
+                            else
                             {
-                                errorForm.Text = "DUPLICATE FINGERPRINT DETECTED";
-                                errorForm.Size = new Size(600, 400);
-                                errorForm.StartPosition = FormStartPosition.CenterParent;
-                                errorForm.BackColor = Color.FromArgb(255, 240, 240);
-                                errorForm.FormBorderStyle = FormBorderStyle.FixedDialog;
-                                errorForm.MaximizeBox = false;
-                                errorForm.MinimizeBox = false;
-
-                                Font poppinsFont = new Font("Segoe UI", 11, FontStyle.Regular);
-                                Font poppinsBold = new Font("Segoe UI", 11, FontStyle.Bold);
-                                Font poppinsTitle = new Font("Segoe UI", 14, FontStyle.Bold);
-
-                                Panel headerPanel = new Panel();
-                                headerPanel.BackColor = Color.FromArgb(255, 200, 200);
-                                headerPanel.Size = new Size(600, 70);
-                                headerPanel.Location = new Point(0, 0);
-                                errorForm.Controls.Add(headerPanel);
-
-                                Label titleLabel = new Label();
-                                titleLabel.Text = "✗ DUPLICATE FINGERPRINT DETECTED";
-                                titleLabel.Font = poppinsTitle;
-                                titleLabel.ForeColor = Color.FromArgb(200, 0, 0);
-                                titleLabel.AutoSize = true;
-                                titleLabel.Location = new Point(20, 25);
-                                errorForm.Controls.Add(titleLabel);
-                                titleLabel.BringToFront();
-
-                                Label messageLabel = new Label();
-                                messageLabel.Text = "This fingerprint is already registered to another student!";
-                                messageLabel.Font = poppinsBold;
-                                messageLabel.ForeColor = Color.Black;
-                                messageLabel.AutoSize = false;
-                                messageLabel.Size = new Size(560, 30);
-                                messageLabel.Location = new Point(20, 90);
-                                messageLabel.TextAlign = ContentAlignment.MiddleLeft;
-                                errorForm.Controls.Add(messageLabel);
-
-                                Label detailsLabel = new Label();
-                                detailsLabel.Text = $"Duplicate Found:\n{duplicateInfo}\n\nThis fingerprint cannot be registered to multiple students.\nRegistration blocked.";
-                                detailsLabel.Font = poppinsFont;
-                                detailsLabel.ForeColor = Color.Black;
-                                detailsLabel.AutoSize = false;
-                                detailsLabel.Size = new Size(560, 180);
-                                detailsLabel.Location = new Point(20, 130);
-                                detailsLabel.TextAlign = ContentAlignment.TopLeft;
-                                errorForm.Controls.Add(detailsLabel);
-
-                                Button okButton = new Button();
-                                okButton.Text = "OK";
-                                okButton.Size = new Size(120, 40);
-                                okButton.Location = new Point(240, 320);
-                                okButton.Font = poppinsBold;
-                                okButton.BackColor = Color.FromArgb(200, 0, 0);
-                                okButton.ForeColor = Color.White;
-                                okButton.FlatStyle = FlatStyle.Flat;
-                                okButton.FlatAppearance.BorderSize = 0;
-                                okButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(220, 0, 0);
-                                okButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(180, 0, 0);
-                                okButton.Cursor = Cursors.Hand;
-                                okButton.DialogResult = DialogResult.OK;
-                                errorForm.Controls.Add(okButton);
-
-                                errorForm.AcceptButton = okButton;
-                                errorForm.ShowDialog();
+                                if (!this.IsDisposed && this.IsHandleCreated)
+                                {
+                                    ShowDuplicateDialog(duplicateInfo);
+                                }
                             }
                         }
 
@@ -264,22 +153,29 @@ namespace BiometricsFingerprint
                     string selectedCourse = "";
                     string selectedYear = "";
 
-                    if (this.InvokeRequired)
+                    if (this.IsHandleCreated && !this.IsDisposed)
                     {
-                        this.Invoke(new Action(() =>
+                        if (this.InvokeRequired)
                         {
-                            studentUid = StudentUid;
-                            fullName = FullName;
-                            selectedCourse = SelectedCourse;
-                            selectedYear = SelectedYearLevel;
-                        }));
-                    }
-                    else
-                    {
-                        studentUid = StudentUid;
-                        fullName = FullName;
-                        selectedCourse = SelectedCourse;
-                        selectedYear = SelectedYearLevel;
+                            this.Invoke(new Action(() =>
+                            {
+                                if (this.IsDisposed || !this.IsHandleCreated) return;
+                                studentUid = StudentUid;
+                                fullName = FullName;
+                                selectedCourse = SelectedCourse;
+                                selectedYear = SelectedYearLevel;
+                            }));
+                        }
+                        else
+                        {
+                            if (!this.IsDisposed && this.IsHandleCreated)
+                            {
+                                studentUid = StudentUid;
+                                fullName = FullName;
+                                selectedCourse = SelectedCourse;
+                                selectedYear = SelectedYearLevel;
+                            }
+                        }
                     }
 
                     if (string.IsNullOrEmpty(studentUid) || string.IsNullOrEmpty(fullName))
@@ -294,16 +190,23 @@ namespace BiometricsFingerprint
 
                     Stop();
 
-                    if (this.InvokeRequired)
+                    if (this.IsHandleCreated && !this.IsDisposed)
                     {
-                        this.Invoke(new Action(() =>
+                        if (this.InvokeRequired)
                         {
-                            ShowSuccessMessage(fullName, studentUid, selectedCourse, selectedYear);
-                        }));
-                    }
-                    else
-                    {
-                        ShowSuccessMessage(fullName, studentUid, selectedCourse, selectedYear);
+                            this.Invoke(new Action(() =>
+                            {
+                                if (this.IsDisposed || !this.IsHandleCreated) return;
+                                ShowSuccessMessage(fullName, studentUid, selectedCourse, selectedYear);
+                            }));
+                        }
+                        else
+                        {
+                            if (!this.IsDisposed && this.IsHandleCreated)
+                            {
+                                ShowSuccessMessage(fullName, studentUid, selectedCourse, selectedYear);
+                            }
+                        }
                     }
                 }
             }
@@ -311,17 +214,95 @@ namespace BiometricsFingerprint
             {
                 SafeMakeReport($"✗ Enrollment error: {ex.Message}");
 
-                if (this.InvokeRequired)
+                if (this.IsHandleCreated && !this.IsDisposed)
                 {
-                    this.Invoke(new Action(() =>
+                    if (this.InvokeRequired)
                     {
-                        MessageBox.Show(this, $"Registration failed: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    }));
+                        this.Invoke(new Action(() =>
+                        {
+                            if (this.IsDisposed || !this.IsHandleCreated) return;
+                            MessageBox.Show(this, $"Registration failed: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }));
+                    }
+                    else
+                    {
+                        if (!this.IsDisposed && this.IsHandleCreated)
+                        {
+                            MessageBox.Show(this, $"Registration failed: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                    }
                 }
-                else
-                {
-                    MessageBox.Show(this, $"Registration failed: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
+            }
+        }
+
+        private void ShowDuplicateDialog(string duplicateInfo)
+        {
+            using (var errorForm = new Form())
+            {
+                errorForm.Text = "DUPLICATE FINGERPRINT DETECTED";
+                errorForm.Size = new Size(600, 400);
+                errorForm.StartPosition = FormStartPosition.CenterParent;
+                errorForm.BackColor = Color.FromArgb(255, 240, 240);
+                errorForm.FormBorderStyle = FormBorderStyle.FixedDialog;
+                errorForm.MaximizeBox = false;
+                errorForm.MinimizeBox = false;
+
+                Font poppinsFont = new Font("Segoe UI", 11, FontStyle.Regular);
+                Font poppinsBold = new Font("Segoe UI", 11, FontStyle.Bold);
+                Font poppinsTitle = new Font("Segoe UI", 14, FontStyle.Bold);
+
+                Panel headerPanel = new Panel();
+                headerPanel.BackColor = Color.FromArgb(255, 200, 200);
+                headerPanel.Size = new Size(600, 70);
+                headerPanel.Location = new Point(0, 0);
+                errorForm.Controls.Add(headerPanel);
+
+                Label titleLabel = new Label();
+                titleLabel.Text = "✗ DUPLICATE FINGERPRINT DETECTED";
+                titleLabel.Font = poppinsTitle;
+                titleLabel.ForeColor = Color.FromArgb(200, 0, 0);
+                titleLabel.AutoSize = true;
+                titleLabel.Location = new Point(20, 25);
+                errorForm.Controls.Add(titleLabel);
+                titleLabel.BringToFront();
+
+                Label messageLabel = new Label();
+                messageLabel.Text = "This fingerprint is already registered to another student!";
+                messageLabel.Font = poppinsBold;
+                messageLabel.ForeColor = Color.Black;
+                messageLabel.AutoSize = false;
+                messageLabel.Size = new Size(560, 30);
+                messageLabel.Location = new Point(20, 90);
+                messageLabel.TextAlign = ContentAlignment.MiddleLeft;
+                errorForm.Controls.Add(messageLabel);
+
+                Label detailsLabel = new Label();
+                detailsLabel.Text = $"Duplicate Found:\n{duplicateInfo}\n\nThis fingerprint cannot be registered to multiple students.\nRegistration blocked.";
+                detailsLabel.Font = poppinsFont;
+                detailsLabel.ForeColor = Color.Black;
+                detailsLabel.AutoSize = false;
+                detailsLabel.Size = new Size(560, 180);
+                detailsLabel.Location = new Point(20, 130);
+                detailsLabel.TextAlign = ContentAlignment.TopLeft;
+                errorForm.Controls.Add(detailsLabel);
+
+                Button okButton = new Button();
+                okButton.Text = "OK";
+                okButton.Size = new Size(120, 40);
+                okButton.Location = new Point(240, 320);
+                okButton.Font = poppinsBold;
+                okButton.BackColor = Color.FromArgb(200, 0, 0);
+                okButton.ForeColor = Color.White;
+                okButton.FlatStyle = FlatStyle.Flat;
+                okButton.FlatAppearance.BorderSize = 0;
+                okButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(220, 0, 0);
+                okButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(180, 0, 0);
+                okButton.Cursor = Cursors.Hand;
+                okButton.DialogResult = DialogResult.OK;
+                errorForm.Controls.Add(okButton);
+
+                errorForm.AcceptButton = okButton;
+                errorForm.ShowDialog();
             }
         }
 
@@ -460,12 +441,23 @@ namespace BiometricsFingerprint
 
         private void ShowSuccessMessage(string fullName, string studentUid, string course, string year)
         {
+            if (!this.IsHandleCreated || this.IsDisposed) return;
+
             if (this.InvokeRequired)
             {
-                this.Invoke(new Action(() => ShowSuccessMessage(fullName, studentUid, course, year)));
+                this.Invoke(new Action(() =>
+                {
+                    if (this.IsDisposed || !this.IsHandleCreated) return;
+                    ShowSuccessMessageInternal(fullName, studentUid, course, year);
+                }));
                 return;
             }
 
+            ShowSuccessMessageInternal(fullName, studentUid, course, year);
+        }
+
+        private void ShowSuccessMessageInternal(string fullName, string studentUid, string course, string year)
+        {
             using (var successForm = new Form())
             {
                 successForm.Text = "ACCOUNT CREATED SUCCESSFULLY";
@@ -572,23 +564,34 @@ namespace BiometricsFingerprint
         {
             try
             {
+                if (!this.IsHandleCreated || this.IsDisposed) return;
+
                 if (this.InvokeRequired)
                 {
-                    this.Invoke(new Action(ClearAllFormFields));
+                    this.Invoke(new Action(() =>
+                    {
+                        if (this.IsDisposed || !this.IsHandleCreated) return;
+                        ClearAllFormFieldsInternal();
+                    }));
                     return;
                 }
 
-                Enroller = new DPFP.Processing.Enrollment();
-                UpdateStatus();
-                SafeMakeReport("Ready for new fingerprint registration");
-                ResetCapture();
-                ClearAllControls(this);
-                SafeMakeReport("Form cleared. Ready for new student registration.");
+                ClearAllFormFieldsInternal();
             }
             catch (Exception ex)
             {
                 SafeMakeReport($"Error clearing form: {ex.Message}");
             }
+        }
+
+        private void ClearAllFormFieldsInternal()
+        {
+            Enroller = new DPFP.Processing.Enrollment();
+            UpdateStatus();
+            SafeMakeReport("Ready for new fingerprint registration");
+            ResetCapture();
+            ClearAllControls(this);
+            SafeMakeReport("Form cleared. Ready for new student registration.");
         }
 
         private void ClearAllControls(Control control)
@@ -683,15 +686,29 @@ namespace BiometricsFingerprint
                                     {
                                         SafeMakeReport($"✗ Student ID {uid} already has fingerprint registered!");
 
-                                        if (this.InvokeRequired)
+                                        if (this.IsHandleCreated && !this.IsDisposed)
                                         {
-                                            this.Invoke(new Action(() =>
+                                            if (this.InvokeRequired)
                                             {
-                                                MessageBox.Show(this,
-                                                    $"Student ID {uid} already has fingerprint registered!\n\nCannot register duplicate fingerprint.",
-                                                    "Fingerprint Already Exists",
-                                                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                                            }));
+                                                this.Invoke(new Action(() =>
+                                                {
+                                                    if (this.IsDisposed || !this.IsHandleCreated) return;
+                                                    MessageBox.Show(this,
+                                                        $"Student ID {uid} already has fingerprint registered!\n\nCannot register duplicate fingerprint.",
+                                                        "Fingerprint Already Exists",
+                                                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                                                }));
+                                            }
+                                            else
+                                            {
+                                                if (!this.IsDisposed && this.IsHandleCreated)
+                                                {
+                                                    MessageBox.Show(this,
+                                                        $"Student ID {uid} already has fingerprint registered!\n\nCannot register duplicate fingerprint.",
+                                                        "Fingerprint Already Exists",
+                                                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                                                }
+                                            }
                                         }
                                         throw new Exception($"Student ID {uid} already has fingerprint registered.");
                                     }
@@ -722,6 +739,8 @@ namespace BiometricsFingerprint
                                 else
                                 {
                                     // Student doesn't exist - INSERT new record
+                                    reader.Close();
+
                                     using (MySqlCommand insertCommand = new MySqlCommand(insertQuery, connection))
                                     {
                                         insertCommand.Parameters.AddWithValue("@uid", uid);
@@ -784,13 +803,22 @@ namespace BiometricsFingerprint
 
         private void SafeMakeReport(string message)
         {
+            if (!this.IsHandleCreated || this.IsDisposed) return;
+
             if (this.InvokeRequired)
             {
-                this.Invoke(new Action(() => MakeReport(message)));
+                this.Invoke(new Action(() =>
+                {
+                    if (this.IsDisposed || !this.IsHandleCreated) return;
+                    MakeReport(message);
+                }));
             }
             else
             {
-                MakeReport(message);
+                if (!this.IsDisposed && this.IsHandleCreated)
+                {
+                    MakeReport(message);
+                }
             }
         }
 

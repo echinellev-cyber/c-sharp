@@ -1032,22 +1032,43 @@ namespace BiometricsFingerprint
 
         private void DrawPicture(Bitmap bitmap)
         {
-            if (IsDisposed || !IsHandleCreated) return;
+            // Create a deep copy immediately to handle cross-thread validity
+            Bitmap bitmapCopy = new Bitmap(bitmap);
+
+            if (IsDisposed || !IsHandleCreated) 
+            {
+                bitmapCopy.Dispose();
+                return;
+            }
+
             try
             {
                 this.BeginInvoke(new Action(delegate ()
                 {
-                    if (fImage != null && !fImage.IsDisposed)
+                    try
                     {
-                        if (fImage.Image != null)
+                        if (fImage != null && !fImage.IsDisposed)
                         {
-                            fImage.Image.Dispose();
+                            if (fImage.Image != null)
+                            {
+                                var oldImage = fImage.Image;
+                                fImage.Image = null;
+                                oldImage.Dispose();
+                            }
+                            fImage.Image = new Bitmap(bitmapCopy, fImage.Size);
                         }
-                        fImage.Image = new Bitmap(bitmap, fImage.Size);
+                    }
+                    finally
+                    {
+                        // Clean up the copy once it's been used to create the resized version
+                        bitmapCopy.Dispose();
                     }
                 }));
             }
-            catch (ObjectDisposedException) { }
+            catch (ObjectDisposedException) 
+            {
+                bitmapCopy.Dispose();
+            }
         }
 
         protected void Setfname(string value)
@@ -1082,7 +1103,10 @@ namespace BiometricsFingerprint
 
         protected virtual void Process(DPFP.Sample Sample)
         {
-            DrawPicture(ConvertSampleToBitmap(Sample));
+            using (Bitmap bitmap = ConvertSampleToBitmap(Sample))
+            {
+                DrawPicture(bitmap);
+            }
         }
 
         protected Bitmap ConvertSampleToBitmap(DPFP.Sample Sample)
@@ -1230,6 +1254,10 @@ namespace BiometricsFingerprint
             LoadCoursesIntoComboBox();     // Load courses when form loads
             LoadYearLevelsIntoComboBox();  // Load year levels
             LoadDepartmentsIntoComboBox(); // Load departments
+
+            // Auto-start/stop scanner on focus
+            this.Activated += (s, ev) => Start();
+            this.Deactivate += (s, ev) => Stop();
         }
 
         private void fname_TextChanged(object sender, EventArgs e)
