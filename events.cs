@@ -1,4 +1,4 @@
-﻿using MySql.Data.MySqlClient;
+using MySql.Data.MySqlClient;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -115,7 +115,8 @@ namespace BiometricsFingerprint
                 "Generated.*fine",
                 "DEBUG:",
                 "Event Access Restricted",
-                "year.*restricted"
+                "year.*restricted",
+                "Course Restriction"
             };
 
             // Always show important messages
@@ -934,12 +935,34 @@ namespace BiometricsFingerprint
         {
             try
             {
-                // Only load events that are not completed
-                string query = "SELECT event_id, event_name, date, start_time, end_time, location FROM admin_event WHERE status != 'Completed' OR status IS NULL ORDER BY date DESC, start_time DESC";
-
                 using (MySqlConnection connection = new MySqlConnection(connectionString))
                 {
                     connection.Open();
+
+                    // Try with allowed_course first; fall back if column doesn't exist yet
+                    string queryWithCourse = @"SELECT event_id, event_name, allowed_course, date, start_time, end_time, location 
+                                FROM admin_event 
+                                WHERE status != 'Completed' OR status IS NULL 
+                                ORDER BY date DESC, start_time DESC";
+                    string queryWithoutCourse = @"SELECT event_id, event_name, date, start_time, end_time, location 
+                                FROM admin_event 
+                                WHERE status != 'Completed' OR status IS NULL 
+                                ORDER BY date DESC, start_time DESC";
+
+                    bool useAllowedCourse = true;
+                    try
+                    {
+                        using (var testCmd = new MySqlCommand("SELECT allowed_course FROM admin_event LIMIT 1", connection))
+                        {
+                            testCmd.ExecuteScalar();
+                        }
+                    }
+                    catch
+                    {
+                        useAllowedCourse = false;
+                    }
+
+                    string query = useAllowedCourse ? queryWithCourse : queryWithoutCourse;
 
                     using (MySqlCommand command = new MySqlCommand(query, connection))
                     using (MySqlDataReader reader = command.ExecuteReader())
@@ -949,12 +972,14 @@ namespace BiometricsFingerprint
                         while (reader.Read())
                         {
                             string eventName = reader["event_name"].ToString();
+                            string allowedCourse = useAllowedCourse ? reader["allowed_course"]?.ToString() : "";
                             DateTime eventDate = Convert.ToDateTime(reader["date"]);
                             TimeSpan startTime = (TimeSpan)reader["start_time"];
                             TimeSpan endTime = (TimeSpan)reader["end_time"];
                             string location = reader["location"].ToString();
 
-                            string displayText = $"{eventName} - {eventDate:MMM dd, yyyy} ({startTime:hh\\:mm} - {endTime:hh\\:mm}) - {location}";
+                            string courseDisplay = string.IsNullOrEmpty(allowedCourse) ? "All Courses" : $"Only: {allowedCourse}";
+                            string displayText = $"{eventName} - {courseDisplay} - {eventDate:MMM dd, yyyy} ({startTime:hh\\:mm} - {endTime:hh\\:mm}) - {location}";
 
                             comboBox1.Items.Add(new EventItem(
                                 Convert.ToInt32(reader["event_id"]),
@@ -1198,9 +1223,10 @@ namespace BiometricsFingerprint
                 {
                     connection.Open();
 
-                    // Get student ID and year level first
-                    string studentQuery = "SELECT id, year_level FROM register_student WHERE uid = @uid";
+                    // Get student ID, course, and year level
+                    string studentQuery = "SELECT id, course, year_level FROM register_student WHERE uid = @uid";
                     int studentId = -1;
+                    string studentCourse = "";
                     string studentYearLevel = "";
 
                     using (var studentCmd = new MySqlCommand(studentQuery, connection))
@@ -1211,6 +1237,7 @@ namespace BiometricsFingerprint
                             if (reader.Read())
                             {
                                 studentId = Convert.ToInt32(reader["id"]);
+                                studentCourse = reader["course"]?.ToString() ?? "";
                                 studentYearLevel = reader["year_level"]?.ToString() ?? "";
                             }
                             else
@@ -1221,11 +1248,27 @@ namespace BiometricsFingerprint
                         }
                     }
 
-                    // Check if event has year level restriction
-                    string eventQuery = "SELECT event_name, year_level FROM admin_event WHERE event_id = @eventId";
+                    // Check if event has course or year level restriction
                     string eventName = "";
+                    string allowedCourse = "";
                     string eventYearLevel = "";
 
+                    // Try with allowed_course; fall back if column doesn't exist
+                    string eventQueryWithCourse = @"SELECT event_name, allowed_course, year_level FROM admin_event WHERE event_id = @eventId";
+                    string eventQueryWithoutCourse = @"SELECT event_name, year_level FROM admin_event WHERE event_id = @eventId";
+
+                    bool hasAllowedCourseColumn = false;
+                    try
+                    {
+                        using (var testCmd = new MySqlCommand("SELECT allowed_course FROM admin_event LIMIT 1", connection))
+                        {
+                            testCmd.ExecuteScalar();
+                            hasAllowedCourseColumn = true;
+                        }
+                    }
+                    catch { }
+
+                    string eventQuery = hasAllowedCourseColumn ? eventQueryWithCourse : eventQueryWithoutCourse;
                     using (var eventCmd = new MySqlCommand(eventQuery, connection))
                     {
                         eventCmd.Parameters.AddWithValue("@eventId", eventId);
@@ -1234,13 +1277,89 @@ namespace BiometricsFingerprint
                             if (reader.Read())
                             {
                                 eventName = reader["event_name"]?.ToString() ?? "";
+                                allowedCourse = hasAllowedCourseColumn ? (reader["allowed_course"]?.ToString() ?? "") : "";
                                 eventYearLevel = reader["year_level"]?.ToString() ?? "";
                             }
                         }
                     }
 
-                    // Check year level restriction
-                    if (!string.IsNullOrEmpty(eventYearLevel) && studentYearLevel != eventYearLevel)
+                    // Check COURSE restriction - when event is IT-only, other courses cannot time in
+                    if (!string.IsNullOrEmpty(allowedCourse))
+                    {
+                        string normalizedAllowed = allowedCourse.Trim().ToLower();
+                        string normalizedStudent = studentCourse.Trim().ToLower();
+
+                        bool courseMatch = false;
+
+                        // Handle multiple courses if separated by commas
+                        string[] allowedCourses = normalizedAllowed.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (string course in allowedCourses)
+                        {
+                            if (normalizedStudent.Contains(course.Trim()) || course.Trim().Contains(normalizedStudent))
+                            {
+                                courseMatch = true;
+                                break;
+                            }
+                        }
+
+                        // Also check for common variations (IT, Information Technology, etc.)
+                        if (!courseMatch)
+                        {
+                            if (normalizedAllowed.Contains("information technology") &&
+                                (normalizedStudent.Contains("it") || normalizedStudent.Contains("information tech")))
+                                courseMatch = true;
+                            else if (normalizedAllowed.Contains("business administration") &&
+                                     normalizedStudent.Contains("business admin"))
+                                courseMatch = true;
+                            else if (normalizedAllowed.Contains("accountancy") &&
+                                     normalizedStudent.Contains("accountancy"))
+                                courseMatch = true;
+                            else if (normalizedAllowed.Contains("nursing") &&
+                                     normalizedStudent.Contains("nursing"))
+                                courseMatch = true;
+                            else if (normalizedAllowed.Contains("education") &&
+                                     (normalizedStudent.Contains("education") || normalizedStudent.Contains("elementary") || normalizedStudent.Contains("secondary")))
+                                courseMatch = true;
+                            else if (normalizedAllowed.Contains("criminology") &&
+                                     normalizedStudent.Contains("criminology"))
+                                courseMatch = true;
+                            else if (normalizedAllowed.Contains("engineering") &&
+                                     (normalizedStudent.Contains("civil") || normalizedStudent.Contains("electrical") || normalizedStudent.Contains("engineering")))
+                                courseMatch = true;
+                        }
+
+                        if (!courseMatch)
+                        {
+                            string message = $"📚 COURSE RESTRICTION NOTICE\n\n" +
+                                           $"This event is specifically for: {allowedCourse} students.\n\n" +
+                                           $"YOUR DETAILS:\n" +
+                                           $"• Course: {studentCourse}\n" +
+                                           $"• Year Level: {studentYearLevel}\n\n" +
+                                           $"❌ ACCESS DENIED\n\n" +
+                                           $"If you believe this is a mistake or have special permission,\n" +
+                                           $"please see the event organizer for assistance.";
+
+                            if (this.InvokeRequired)
+                            {
+                                this.Invoke(new Action(() =>
+                                {
+                                    MessageBox.Show(message, "Course Restriction",
+                                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                                }));
+                            }
+                            else
+                            {
+                                MessageBox.Show(message, "Course Restriction",
+                                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            }
+
+                            MakeReport($"[{scannerId}] ✗ {studentName} ({studentCourse}) restricted from {eventName} (for {allowedCourse} only)");
+                            return;
+                        }
+                    }
+
+                    // Check year level restriction (with normalized comparison for "4" vs "4th Year" etc.)
+                    if (!string.IsNullOrEmpty(eventYearLevel) && !YearLevelsMatch(studentYearLevel, eventYearLevel))
                     {
                         // Show friendly restriction message
                         string message = $"📚 Event Access Notice\n\n" +
@@ -1455,6 +1574,32 @@ namespace BiometricsFingerprint
             {
                 MakeReport($"[{scannerId}] Error recording attendance: {ex.Message}");
             }
+        }
+
+        // Helper: Normalize year level for comparison (handles "4" vs "4th Year", "3" vs "3rd Year", etc.)
+        private bool YearLevelsMatch(string studentYear, string eventYear)
+        {
+            if (string.IsNullOrWhiteSpace(studentYear) || string.IsNullOrWhiteSpace(eventYear))
+                return false;
+
+            string s = studentYear.Trim().ToLower();
+            string e = eventYear.Trim().ToLower();
+
+            // Exact match
+            if (s == e) return true;
+
+            // Normalize to numeric form for comparison
+            string Normalize(string y)
+            {
+                if (y.Contains("1st") || y == "1") return "1";
+                if (y.Contains("2nd") || y == "2") return "2";
+                if (y.Contains("3rd") || y == "3") return "3";
+                if (y.Contains("4th") || y == "4") return "4";
+                if (y.Contains("5th") || y == "5") return "5";
+                return y;
+            }
+
+            return Normalize(s) == Normalize(e);
         }
 
         // Helper method to get attendance ID
