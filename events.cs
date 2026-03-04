@@ -968,9 +968,11 @@ namespace BiometricsFingerprint
                     using (MySqlDataReader reader = command.ExecuteReader())
                     {
                         comboBox1.Items.Clear();
+                        int count = 0;
 
                         while (reader.Read())
                         {
+                            count++;
                             string eventName = reader["event_name"].ToString();
                             string allowedCourse = useAllowedCourse ? reader["allowed_course"]?.ToString() : "";
                             DateTime eventDate = Convert.ToDateTime(reader["date"]);
@@ -986,11 +988,21 @@ namespace BiometricsFingerprint
                                 displayText
                             ));
                         }
+
+                        if (count == 0)
+                        {
+                            MakeReport("No active events found. Create events in the admin panel (Events Management) or ensure existing events are not marked as Completed.");
+                        }
+                        else
+                        {
+                            MakeReport($"Loaded {count} event(s)");
+                        }
                     }
                 }
             }
             catch (Exception ex)
             {
+                MakeReport($"Error loading events: {ex.Message}");
                 MessageBox.Show($"Error loading events: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
