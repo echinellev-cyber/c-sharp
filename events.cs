@@ -115,8 +115,7 @@ namespace BiometricsFingerprint
                 "Generated.*fine",
                 "DEBUG:",
                 "Event Access Restricted",
-                "year.*restricted",
-                "Course Restriction"
+                "year.*restricted"
             };
 
             // Always show important messages
@@ -201,10 +200,10 @@ namespace BiometricsFingerprint
 
                 if (fingerprintImage != null && !fingerprintImage.IsDisposed && fingerprintImage.InvokeRequired)
                 {
-                    try
+                    try 
                     {
                         fingerprintImage.Invoke(new Action<Bitmap>((bmp) => {
-                            try
+                            try 
                             {
                                 if (fingerprintImage != null && !fingerprintImage.IsDisposed)
                                 {
@@ -225,10 +224,10 @@ namespace BiometricsFingerprint
                             }
                         }), bitmapCopy);
                     }
-                    catch
-                    {
+                    catch 
+                    { 
                         // If Invoke fails, we must dispose the copy
-                        bitmapCopy.Dispose();
+                        bitmapCopy.Dispose(); 
                     }
                 }
                 else if (fingerprintImage != null && !fingerprintImage.IsDisposed)
@@ -518,39 +517,39 @@ namespace BiometricsFingerprint
             try
             {
                 if (scannerHandlers.ContainsKey(scannerId))
+            {
+                // ConvertSampleToBitmap creates a new Bitmap. DrawPicture takes ownership.
+                // However, we must ensure we don't leak it if DrawPicture copies it instead of using it directly.
+                // In our implementation, DrawPicture creates a NEW Bitmap from the input: new Bitmap(bitmap, size)
+                // So the input bitmap MUST be disposed here!
+                
+                using (Bitmap rawBitmap = ConvertSampleToBitmap(Sample))
                 {
-                    // ConvertSampleToBitmap creates a new Bitmap. DrawPicture takes ownership.
-                    // However, we must ensure we don't leak it if DrawPicture copies it instead of using it directly.
-                    // In our implementation, DrawPicture creates a NEW Bitmap from the input: new Bitmap(bitmap, size)
-                    // So the input bitmap MUST be disposed here!
-
-                    using (Bitmap rawBitmap = ConvertSampleToBitmap(Sample))
-                    {
-                        scannerHandlers[scannerId].DrawPicture(rawBitmap);
-                    }
-                }
-
-                MakeReport($"[{scannerId}] Processing fingerprint...");
-
-                try
-                {
-                    var features = ExtractFeatures(Sample, DPFP.Processing.DataPurpose.Verification);
-
-                    if (features != null)
-                    {
-                        MakeReport($"[{scannerId}] ✓ Features extracted");
-                        CheckForMatch(scannerId, features);
-                    }
-                    else
-                    {
-                        MakeReport($"[{scannerId}] ✗ Failed to extract features");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MakeReport($"[{scannerId}] Error: {ex.Message}");
+                    scannerHandlers[scannerId].DrawPicture(rawBitmap);
                 }
             }
+
+            MakeReport($"[{scannerId}] Processing fingerprint...");
+
+            try
+            {
+                var features = ExtractFeatures(Sample, DPFP.Processing.DataPurpose.Verification);
+
+                if (features != null)
+                {
+                    MakeReport($"[{scannerId}] ✓ Features extracted");
+                    CheckForMatch(scannerId, features);
+                }
+                else
+                {
+                    MakeReport($"[{scannerId}] ✗ Failed to extract features");
+                }
+            }
+            catch (Exception ex)
+            {
+                MakeReport($"[{scannerId}] Error: {ex.Message}");
+            }
+        }
             finally
             {
                 _isProcessingFingerprint = false;
@@ -935,11 +934,8 @@ namespace BiometricsFingerprint
         {
             try
             {
-                // Add course field to the query
-                string query = @"SELECT event_id, event_name, allowed_course, date, start_time, end_time, location 
-                                FROM admin_event 
-                                WHERE status != 'Completed' OR status IS NULL 
-                                ORDER BY date DESC, start_time DESC";
+                // Only load events that are not completed
+                string query = "SELECT event_id, event_name, date, start_time, end_time, location FROM admin_event WHERE status != 'Completed' OR status IS NULL ORDER BY date DESC, start_time DESC";
 
                 using (MySqlConnection connection = new MySqlConnection(connectionString))
                 {
@@ -953,15 +949,12 @@ namespace BiometricsFingerprint
                         while (reader.Read())
                         {
                             string eventName = reader["event_name"].ToString();
-                            string allowedCourse = reader["allowed_course"]?.ToString();
                             DateTime eventDate = Convert.ToDateTime(reader["date"]);
                             TimeSpan startTime = (TimeSpan)reader["start_time"];
                             TimeSpan endTime = (TimeSpan)reader["end_time"];
                             string location = reader["location"].ToString();
 
-                            // Add course restriction to display text
-                            string courseDisplay = string.IsNullOrEmpty(allowedCourse) ? "All Courses" : $"Only: {allowedCourse}";
-                            string displayText = $"{eventName} - {courseDisplay} - {eventDate:MMM dd, yyyy} ({startTime:hh\\:mm} - {endTime:hh\\:mm}) - {location}";
+                            string displayText = $"{eventName} - {eventDate:MMM dd, yyyy} ({startTime:hh\\:mm} - {endTime:hh\\:mm}) - {location}";
 
                             comboBox1.Items.Add(new EventItem(
                                 Convert.ToInt32(reader["event_id"]),
@@ -1196,7 +1189,7 @@ namespace BiometricsFingerprint
             RecordAttendance(scannerId, eventId, uid, name);
         }
 
-        // UPDATED: RecordAttendance method with course-level checking
+        // UPDATED: RecordAttendance method with year-level checking and minimum session duration
         private void RecordAttendance(string scannerId, int eventId, string uid, string studentName)
         {
             try
@@ -1205,10 +1198,9 @@ namespace BiometricsFingerprint
                 {
                     connection.Open();
 
-                    // Get student ID, course, and year level
-                    string studentQuery = "SELECT id, course, year_level FROM register_student WHERE uid = @uid";
+                    // Get student ID and year level first
+                    string studentQuery = "SELECT id, year_level FROM register_student WHERE uid = @uid";
                     int studentId = -1;
-                    string studentCourse = "";
                     string studentYearLevel = "";
 
                     using (var studentCmd = new MySqlCommand(studentQuery, connection))
@@ -1219,7 +1211,6 @@ namespace BiometricsFingerprint
                             if (reader.Read())
                             {
                                 studentId = Convert.ToInt32(reader["id"]);
-                                studentCourse = reader["course"]?.ToString() ?? "";
                                 studentYearLevel = reader["year_level"]?.ToString() ?? "";
                             }
                             else
@@ -1230,11 +1221,9 @@ namespace BiometricsFingerprint
                         }
                     }
 
-                    // Check if event has course or year level restriction
-                    string eventQuery = @"SELECT event_name, allowed_course, year_level 
-                                         FROM admin_event WHERE event_id = @eventId";
+                    // Check if event has year level restriction
+                    string eventQuery = "SELECT event_name, year_level FROM admin_event WHERE event_id = @eventId";
                     string eventName = "";
-                    string allowedCourse = "";
                     string eventYearLevel = "";
 
                     using (var eventCmd = new MySqlCommand(eventQuery, connection))
@@ -1245,116 +1234,34 @@ namespace BiometricsFingerprint
                             if (reader.Read())
                             {
                                 eventName = reader["event_name"]?.ToString() ?? "";
-                                allowedCourse = reader["allowed_course"]?.ToString() ?? "";
                                 eventYearLevel = reader["year_level"]?.ToString() ?? "";
                             }
                         }
                     }
 
-                    // Check COURSE restriction
-                    if (!string.IsNullOrEmpty(allowedCourse))
-                    {
-                        // Normalize both strings for comparison
-                        string normalizedAllowed = allowedCourse.Trim().ToLower();
-                        string normalizedStudent = studentCourse.Trim().ToLower();
-
-                        bool courseMatch = false;
-
-                        // Handle multiple courses if separated by commas
-                        string[] allowedCourses = normalizedAllowed.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-                        foreach (string course in allowedCourses)
-                        {
-                            if (normalizedStudent.Contains(course.Trim()) || course.Trim().Contains(normalizedStudent))
-                            {
-                                courseMatch = true;
-                                break;
-                            }
-                        }
-
-                        // Also check for common variations
-                        if (!courseMatch)
-                        {
-                            // Check for "BS in Information Technology" vs "IT" etc.
-                            if (normalizedAllowed.Contains("information technology") &&
-                                (normalizedStudent.Contains("it") || normalizedStudent.Contains("information tech")))
-                                courseMatch = true;
-                            else if (normalizedAllowed.Contains("business administration") &&
-                                     normalizedStudent.Contains("business admin"))
-                                courseMatch = true;
-                            else if (normalizedAllowed.Contains("accountancy") &&
-                                     normalizedStudent.Contains("accountancy"))
-                                courseMatch = true;
-                            else if (normalizedAllowed.Contains("nursing") &&
-                                     normalizedStudent.Contains("nursing"))
-                                courseMatch = true;
-                            else if (normalizedAllowed.Contains("education") &&
-                                     (normalizedStudent.Contains("education") || normalizedStudent.Contains("elementary") || normalizedStudent.Contains("secondary")))
-                                courseMatch = true;
-                            else if (normalizedAllowed.Contains("criminology") &&
-                                     normalizedStudent.Contains("criminology"))
-                                courseMatch = true;
-                            else if (normalizedAllowed.Contains("engineering") &&
-                                     (normalizedStudent.Contains("civil") || normalizedStudent.Contains("electrical") || normalizedStudent.Contains("engineering")))
-                                courseMatch = true;
-                        }
-
-                        if (!courseMatch)
-                        {
-                            // Show friendly course restriction message with student's actual course
-                            string message = $"📚 COURSE RESTRICTION NOTICE\n\n" +
-                                           $"This event is specifically for: **{allowedCourse}** students.\n\n" +
-                                           $"YOUR DETAILS:\n" +
-                                           $"• Course: **{studentCourse}**\n" +
-                                           $"• Year Level: **{studentYearLevel}**\n\n" +
-                                           $"❌ ACCESS DENIED\n\n" +
-                                           $"If you believe this is a mistake or have special permission,\n" +
-                                           $"please see the event organizer for assistance.";
-
-                            // Show message box on UI thread
-                            if (this.InvokeRequired)
-                            {
-                                this.Invoke(new Action(() =>
-                                {
-                                    MessageBox.Show(message, "Course Restriction",
-                                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                                }));
-                            }
-                            else
-                            {
-                                MessageBox.Show(message, "Course Restriction",
-                                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                            }
-
-                            MakeReport($"[{scannerId}] ✗ {studentName} ({studentCourse}) restricted from {eventName} (for {allowedCourse} only)");
-                            return; // Don't proceed with attendance recording
-                        }
-                    }
-
-                    // Check YEAR LEVEL restriction (existing code)
+                    // Check year level restriction
                     if (!string.IsNullOrEmpty(eventYearLevel) && studentYearLevel != eventYearLevel)
                     {
                         // Show friendly restriction message
-                        string message = $"📚 YEAR LEVEL RESTRICTION NOTICE\n\n" +
-                                       $"This event is specifically for: **{eventYearLevel}** students.\n\n" +
-                                       $"YOUR DETAILS:\n" +
-                                       $"• Year Level: **{studentYearLevel}**\n" +
-                                       $"• Course: **{studentCourse}**\n\n" +
-                                       $"❌ ACCESS DENIED\n\n" +
+                        string message = $"📚 Event Access Notice\n\n" +
+                                       $"This event is specifically for {eventYearLevel} students.\n" +
+                                       $"You are currently enrolled as a {studentYearLevel} student.\n\n" +
                                        $"If you believe this is a mistake or have special permission,\n" +
                                        $"please see the event organizer for assistance.";
 
+                        // Show message box on UI thread
                         if (this.InvokeRequired)
                         {
                             this.Invoke(new Action(() =>
                             {
-                                MessageBox.Show(message, "Year Level Restriction",
-                                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                                MessageBox.Show(message, "Event Access Restricted",
+                                    MessageBoxButtons.OK, MessageBoxIcon.Information);
                             }));
                         }
                         else
                         {
-                            MessageBox.Show(message, "Year Level Restriction",
-                                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            MessageBox.Show(message, "Event Access Restricted",
+                                MessageBoxButtons.OK, MessageBoxIcon.Information);
                         }
 
                         MakeReport($"[{scannerId}] ✗ {studentName} ({studentYearLevel}) restricted from {eventName} (for {eventYearLevel} only)");
@@ -1364,9 +1271,9 @@ namespace BiometricsFingerprint
                     // Continue with normal attendance recording...
                     // Check current attendance status for this student and event
                     string checkQuery = @"SELECT time_in, time_out, attendance_status 
-                                      FROM students_events 
-                                      WHERE event_id = @eventId 
-                                      AND student_id = @studentId";
+                              FROM students_events 
+                              WHERE event_id = @eventId 
+                              AND student_id = @studentId";
 
                     using (var checkCmd = new MySqlCommand(checkQuery, connection))
                     {
@@ -1388,11 +1295,11 @@ namespace BiometricsFingerprint
                                     // FIRST SCAN: No time in or time out - RECORD TIME IN
                                     DateTime timeIn = DateTime.Now;
                                     string timeInQuery = @"UPDATE students_events 
-                                                   SET attendance_status = 'present', 
-                                                       time_in = @timeIn,
-                                                       recorded_by = @recordedBy
-                                                   WHERE event_id = @eventId 
-                                                   AND student_id = @studentId";
+                                           SET attendance_status = 'present', 
+                                               time_in = @timeIn,
+                                               recorded_by = @recordedBy
+                                           WHERE event_id = @eventId 
+                                           AND student_id = @studentId";
 
                                     using (var updateCmd = new MySqlCommand(timeInQuery, connection))
                                     {
@@ -1422,8 +1329,8 @@ namespace BiometricsFingerprint
                                 {
                                     // SECOND SCAN: Has time in but no time out - CHECK MINIMUM SESSION DURATION
                                     string getTimeInQuery = @"SELECT time_in FROM students_events 
-                                                             WHERE event_id = @eventId 
-                                                             AND student_id = @studentId";
+                                                     WHERE event_id = @eventId 
+                                                     AND student_id = @studentId";
 
                                     using (var timeInCmd = new MySqlCommand(getTimeInQuery, connection))
                                     {
@@ -1472,9 +1379,9 @@ namespace BiometricsFingerprint
 
                                             // If minimum duration has passed, allow time out
                                             string timeOutQuery = @"UPDATE students_events 
-                                                                   SET time_out = NOW()
-                                                                   WHERE event_id = @eventId 
-                                                                   AND student_id = @studentId";
+                                                           SET time_out = NOW()
+                                                           WHERE event_id = @eventId 
+                                                           AND student_id = @studentId";
 
                                             using (var updateCmd = new MySqlCommand(timeOutQuery, connection))
                                             {
@@ -1513,8 +1420,8 @@ namespace BiometricsFingerprint
                                 // No record exists - create new attendance record with time in
                                 DateTime timeIn = DateTime.Now;
                                 string insertQuery = @"INSERT INTO students_events 
-                                              (event_id, student_id, attendance_status, time_in, recorded_by) 
-                                              VALUES (@eventId, @studentId, 'present', @timeIn, @recordedBy)";
+                                      (event_id, student_id, attendance_status, time_in, recorded_by) 
+                                      VALUES (@eventId, @studentId, 'present', @timeIn, @recordedBy)";
 
                                 using (var insertCmd = new MySqlCommand(insertQuery, connection))
                                 {
