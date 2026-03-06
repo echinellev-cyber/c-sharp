@@ -939,15 +939,15 @@ namespace BiometricsFingerprint
                 {
                     connection.Open();
 
-                    // Try with allowed_course first; fall back if column doesn't exist yet
-                    string queryWithCourse = @"SELECT event_id, event_name, allowed_course, date, start_time, end_time, location 
-                                FROM admin_event 
-                                WHERE status != 'Completed' OR status IS NULL 
-                                ORDER BY date DESC, start_time DESC";
-                    string queryWithoutCourse = @"SELECT event_id, event_name, date, start_time, end_time, location 
-                                FROM admin_event 
-                                WHERE status != 'Completed' OR status IS NULL 
-                                ORDER BY date DESC, start_time DESC";
+                    // Try with allowed_course and created_by; fall back if column doesn't exist yet
+                    string queryWithCourse = @"SELECT ae.event_id, ae.event_name, ae.allowed_course, ae.date, ae.start_time, ae.end_time, ae.location, ae.created_by 
+                                FROM admin_event ae 
+                                WHERE (ae.status != 'Completed' OR ae.status IS NULL) 
+                                ORDER BY ae.date DESC, ae.start_time DESC";
+                    string queryWithoutCourse = @"SELECT ae.event_id, ae.event_name, ae.date, ae.start_time, ae.end_time, ae.location, ae.created_by 
+                                FROM admin_event ae 
+                                WHERE (ae.status != 'Completed' OR ae.status IS NULL) 
+                                ORDER BY ae.date DESC, ae.start_time DESC";
 
                     bool useAllowedCourse = true;
                     try
@@ -975,12 +975,14 @@ namespace BiometricsFingerprint
                             count++;
                             string eventName = reader["event_name"].ToString();
                             string allowedCourse = useAllowedCourse ? reader["allowed_course"]?.ToString() : "";
+                            int? createdBy = reader["created_by"] != DBNull.Value && reader["created_by"] != null ? Convert.ToInt32(reader["created_by"]) : (int?)null;
                             DateTime eventDate = Convert.ToDateTime(reader["date"]);
                             TimeSpan startTime = (TimeSpan)reader["start_time"];
                             TimeSpan endTime = (TimeSpan)reader["end_time"];
                             string location = reader["location"].ToString();
 
-                            string courseDisplay = GetCourseDisplayForDropdown(allowedCourse);
+                            // When allowed_course is empty, infer from creator's department
+                            string courseDisplay = GetCourseDisplayForDropdown(allowedCourse, createdBy, connection);
                             string displayText = $"{eventName} - {courseDisplay} - {eventDate:MMM dd, yyyy} ({startTime:hh\\:mm} - {endTime:hh\\:mm}) - {location}";
 
                             comboBox1.Items.Add(new EventItem(
@@ -1672,8 +1674,24 @@ namespace BiometricsFingerprint
         }
 
         // Helper: Get short display for event dropdown (CASE-IT for Arts & Sciences, EPT for Engineering, etc.)
-        private string GetCourseDisplayForDropdown(string allowedCourse)
+        // When allowedCourse is empty, infer from creator's department via createdBy
+        private string GetCourseDisplayForDropdown(string allowedCourse, int? createdBy, MySqlConnection connection)
         {
+            if (string.IsNullOrWhiteSpace(allowedCourse) && createdBy.HasValue && connection != null)
+            {
+                try
+                {
+                    using (var cmd = new MySqlCommand("SELECT department FROM admin WHERE admin_id = @id", connection))
+                    {
+                        cmd.Parameters.AddWithValue("@id", createdBy.Value);
+                        object dept = cmd.ExecuteScalar();
+                        string creatorDept = dept?.ToString()?.Trim();
+                        if (!string.IsNullOrWhiteSpace(creatorDept))
+                            return GetDepartmentDisplayForDropdown(creatorDept);
+                    }
+                }
+                catch { /* ignore */ }
+            }
             if (string.IsNullOrWhiteSpace(allowedCourse)) return "All Courses";
             string lower = allowedCourse.Trim().ToLower();
             if (lower.Contains("nursing") || lower.Contains("midwifery")) return "Medical Sciences";
@@ -1684,6 +1702,19 @@ namespace BiometricsFingerprint
             if (lower.Contains("information technology") || lower.Contains("elementary education") || lower.Contains("secondary education") || (lower.Contains("education") && !lower.Contains("engineering")))
                 return "CASE-IT";
             return allowedCourse;
+        }
+
+        private string GetDepartmentDisplayForDropdown(string department)
+        {
+            if (string.IsNullOrWhiteSpace(department)) return "All Courses";
+            string d = department.Trim();
+            if (d.IndexOf("Engineering", StringComparison.OrdinalIgnoreCase) >= 0 && d.IndexOf("Information", StringComparison.OrdinalIgnoreCase) < 0) return "EPT";
+            if (d.IndexOf("Medical", StringComparison.OrdinalIgnoreCase) >= 0) return "Medical Sciences";
+            if (d.IndexOf("Criminology", StringComparison.OrdinalIgnoreCase) >= 0) return "Criminology";
+            if (d.IndexOf("Business", StringComparison.OrdinalIgnoreCase) >= 0 || d.IndexOf("Accountancy", StringComparison.OrdinalIgnoreCase) >= 0) return "Business, Management & Accountancy";
+            if (d.IndexOf("Arts", StringComparison.OrdinalIgnoreCase) >= 0 || d.IndexOf("Science", StringComparison.OrdinalIgnoreCase) >= 0 || d.IndexOf("Education", StringComparison.OrdinalIgnoreCase) >= 0 || d.IndexOf("Information Technology", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "CASE-IT";
+            return department;
         }
 
         // Helper: Get friendly department name from allowed_course (e.g. "Medical Sciences", "Arts & Sciences")
