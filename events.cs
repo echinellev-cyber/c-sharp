@@ -980,7 +980,7 @@ namespace BiometricsFingerprint
                             TimeSpan endTime = (TimeSpan)reader["end_time"];
                             string location = reader["location"].ToString();
 
-                            string courseDisplay = string.IsNullOrEmpty(allowedCourse) ? "All Courses" : $"Only: {allowedCourse}";
+                            string courseDisplay = GetCourseDisplayForDropdown(allowedCourse);
                             string displayText = $"{eventName} - {courseDisplay} - {eventDate:MMM dd, yyyy} ({startTime:hh\\:mm} - {endTime:hh\\:mm}) - {location}";
 
                             comboBox1.Items.Add(new EventItem(
@@ -1669,6 +1669,21 @@ namespace BiometricsFingerprint
                 if (kv.Key.IndexOf(dept, StringComparison.OrdinalIgnoreCase) >= 0 || dept.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0)
                     return kv.Value;
             return "";
+        }
+
+        // Helper: Get short display for event dropdown (CASE-IT for Arts & Sciences, EPT for Engineering, etc.)
+        private string GetCourseDisplayForDropdown(string allowedCourse)
+        {
+            if (string.IsNullOrWhiteSpace(allowedCourse)) return "All Courses";
+            string lower = allowedCourse.Trim().ToLower();
+            if (lower.Contains("nursing") || lower.Contains("midwifery")) return "Medical Sciences";
+            if (lower.Contains("civil") || lower.Contains("electrical") || lower.Contains("mechanical")) return "EPT";
+            if (lower.Contains("criminology")) return "Criminology";
+            if (lower.Contains("accountancy") || lower.Contains("business") || lower.Contains("hospitality") || lower.Contains("tourism")) return "Business, Management & Accountancy";
+            // Arts & Sciences: IT, Education, Elementary Ed, Secondary Ed
+            if (lower.Contains("information technology") || lower.Contains("elementary education") || lower.Contains("secondary education") || (lower.Contains("education") && !lower.Contains("engineering")))
+                return "CASE-IT";
+            return allowedCourse;
         }
 
         // Helper: Get friendly department name from allowed_course (e.g. "Medical Sciences", "Arts & Sciences")
