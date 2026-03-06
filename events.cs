@@ -1265,9 +1265,9 @@ namespace BiometricsFingerprint
                     string allowedCourse = "";
                     string eventYearLevel = "";
 
-                    // Try with allowed_course; fall back if column doesn't exist
-                    string eventQueryWithCourse = @"SELECT event_name, allowed_course, year_level FROM admin_event WHERE event_id = @eventId";
-                    string eventQueryWithoutCourse = @"SELECT event_name, year_level FROM admin_event WHERE event_id = @eventId";
+                    // Try with allowed_course and created_by; fall back if column doesn't exist
+                    string eventQueryWithCourse = @"SELECT event_name, allowed_course, year_level, created_by FROM admin_event WHERE event_id = @eventId";
+                    string eventQueryWithoutCourse = @"SELECT event_name, year_level, created_by FROM admin_event WHERE event_id = @eventId";
 
                     bool hasAllowedCourseColumn = false;
                     try
@@ -1280,6 +1280,7 @@ namespace BiometricsFingerprint
                     }
                     catch { }
 
+                    int? createdBy = null;
                     string eventQuery = hasAllowedCourseColumn ? eventQueryWithCourse : eventQueryWithoutCourse;
                     using (var eventCmd = new MySqlCommand(eventQuery, connection))
                     {
@@ -1289,8 +1290,41 @@ namespace BiometricsFingerprint
                             if (reader.Read())
                             {
                                 eventName = reader["event_name"]?.ToString() ?? "";
-                                allowedCourse = hasAllowedCourseColumn ? (reader["allowed_course"]?.ToString() ?? "") : "";
+                                allowedCourse = hasAllowedCourseColumn ? (reader["allowed_course"]?.ToString() ?? "").Trim() : "";
                                 eventYearLevel = reader["year_level"]?.ToString() ?? "";
+                                if (reader["created_by"] != DBNull.Value && reader["created_by"] != null)
+                                    createdBy = Convert.ToInt32(reader["created_by"]);
+                            }
+                        }
+                    }
+
+                    // FALLBACK: When allowed_course is empty, get creator's department from admin table and apply restriction
+                    if (string.IsNullOrEmpty(allowedCourse) && createdBy.HasValue)
+                    {
+                        string creatorDept = "";
+                        using (var deptCmd = new MySqlCommand("SELECT department FROM admin WHERE admin_id = @aid", connection))
+                        {
+                            deptCmd.Parameters.AddWithValue("@aid", createdBy.Value);
+                            var deptObj = deptCmd.ExecuteScalar();
+                            if (deptObj != null && deptObj != DBNull.Value)
+                                creatorDept = (deptObj.ToString() ?? "").Trim();
+                        }
+                        if (!string.IsNullOrEmpty(creatorDept))
+                        {
+                            allowedCourse = GetAllowedCoursesFromDepartment(creatorDept);
+                            // Auto-fix: update event in DB so we don't need to look up again
+                            if (!string.IsNullOrEmpty(allowedCourse))
+                            {
+                                try
+                                {
+                                    using (var updateCmd = new MySqlCommand("UPDATE admin_event SET allowed_course = @ac WHERE event_id = @eid", connection))
+                                    {
+                                        updateCmd.Parameters.AddWithValue("@ac", allowedCourse);
+                                        updateCmd.Parameters.AddWithValue("@eid", eventId);
+                                        updateCmd.ExecuteNonQuery();
+                                    }
+                                }
+                                catch { }
                             }
                         }
                     }
@@ -1613,6 +1647,28 @@ namespace BiometricsFingerprint
             }
 
             return Normalize(s) == Normalize(e);
+        }
+
+        // Helper: Get allowed courses from admin department (matches course_mapping.json)
+        private string GetAllowedCoursesFromDepartment(string department)
+        {
+            if (string.IsNullOrWhiteSpace(department)) return "";
+            string dept = department.Trim();
+            // Format: "BS in Information Technology,BS in Computer Science,..." (matches register_student.course)
+            var mapping = new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Information Technology"] = "BS in Information Technology",
+                ["Arts, Science, Education & Information Technology"] = "BS in Biology,BS in Computer Science,BS in Education,BS in Elementary Education,BS in Entertainment and Multimedia Computing,BS in Information Systems,BS in Information Technology,BS in Psychology,BS in Secondary Education",
+                ["Business, Management & Accountancy"] = "BS in Accountancy,BS in Accounting Information Systems,BS in Business Administration,BS in Hospitality Management,BS in Tourism Management",
+                ["Criminology"] = "BS in Criminology",
+                ["Engineering & Technology"] = "BS in Civil Engineering,BS in Electrical Engineering,BS in Mechanical Engineering",
+                ["Medical Sciences"] = "BS in Midwifery,BS in Nursing"
+            };
+            if (mapping.TryGetValue(dept, out string courses)) return courses;
+            foreach (var kv in mapping)
+                if (kv.Key.IndexOf(dept, StringComparison.OrdinalIgnoreCase) >= 0 || dept.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return kv.Value;
+            return "";
         }
 
         // Helper: Get friendly department name from allowed_course (e.g. "Medical Sciences", "Arts & Sciences")
