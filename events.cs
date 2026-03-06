@@ -1,6 +1,7 @@
 using MySql.Data.MySqlClient;
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Data;
 using System.Drawing;
 using System.IO;
@@ -615,6 +616,11 @@ namespace BiometricsFingerprint
                             }
                         }
                     }
+                }
+                // Fallback: App.config (for Medical Sciences station, set StationDepartment=Medical Sciences)
+                if (string.IsNullOrWhiteSpace(stationDepartmentFilter))
+                {
+                    stationDepartmentFilter = ConfigurationManager.AppSettings["StationDepartment"]?.Trim() ?? "";
                 }
             }
             catch (Exception ex)
