@@ -1342,11 +1342,12 @@ namespace BiometricsFingerprint
 
                         if (!courseMatch)
                         {
-                            string message = $"📚 COURSE RESTRICTION NOTICE\n\n" +
-                                           $"This event is specifically for: {allowedCourse} students.\n\n" +
-                                           $"YOUR DETAILS:\n" +
-                                           $"• Course: {studentCourse}\n" +
-                                           $"• Year Level: {studentYearLevel}\n\n" +
+                            // Friendly department names for popup (e.g. "This event is only for Medical. You are IT.")
+                            string eventDept = GetDepartmentDisplayName(allowedCourse);
+                            string studentDept = GetStudentDepartmentDisplayName(studentCourse);
+                            string message = $"📚 COURSE RESTRICTION\n\n" +
+                                           $"This event is only for {eventDept} students.\n\n" +
+                                           $"You are from {studentDept}.\n\n" +
                                            $"❌ ACCESS DENIED\n\n" +
                                            $"If you believe this is a mistake or have special permission,\n" +
                                            $"please see the event organizer for assistance.";
@@ -1612,6 +1613,34 @@ namespace BiometricsFingerprint
             }
 
             return Normalize(s) == Normalize(e);
+        }
+
+        // Helper: Get friendly department name from allowed_course (e.g. "Medical Sciences", "Arts & Sciences")
+        private string GetDepartmentDisplayName(string allowedCourse)
+        {
+            if (string.IsNullOrWhiteSpace(allowedCourse)) return "this department";
+            string lower = allowedCourse.Trim().ToLower();
+            if (lower.Contains("nursing") || lower.Contains("midwifery")) return "Medical Sciences";
+            if (lower.Contains("information technology") || lower.Contains("computer science") || lower.Contains("biology") ||
+                lower.Contains("psychology") || lower.Contains("education")) return "Arts & Sciences";
+            if (lower.Contains("accountancy") || lower.Contains("business") || lower.Contains("hospitality") || lower.Contains("tourism")) return "Business, Management & Accountancy";
+            if (lower.Contains("criminology")) return "Criminology";
+            if (lower.Contains("engineering") || lower.Contains("civil") || lower.Contains("electrical") || lower.Contains("mechanical")) return "Engineering & Technology";
+            return "this department";
+        }
+
+        // Helper: Get friendly department/course name for student (e.g. "IT", "Medical")
+        private string GetStudentDepartmentDisplayName(string studentCourse)
+        {
+            if (string.IsNullOrWhiteSpace(studentCourse)) return "another department";
+            string lower = studentCourse.Trim().ToLower();
+            if (lower.Contains("nursing") || lower.Contains("midwifery")) return "Medical Sciences";
+            if (lower.Contains("information technology")) return "IT";
+            if (lower.Contains("computer science") || lower.Contains("biology") || lower.Contains("psychology") || lower.Contains("education")) return "Arts & Sciences";
+            if (lower.Contains("accountancy") || lower.Contains("business") || lower.Contains("hospitality") || lower.Contains("tourism")) return "Business, Management & Accountancy";
+            if (lower.Contains("criminology")) return "Criminology";
+            if (lower.Contains("engineering") || lower.Contains("civil") || lower.Contains("electrical") || lower.Contains("mechanical")) return "Engineering & Technology";
+            return studentCourse;
         }
 
         // Helper method to get attendance ID
