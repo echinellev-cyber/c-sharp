@@ -1658,7 +1658,7 @@ namespace BiometricsFingerprint
             var mapping = new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["Information Technology"] = "BS in Information Technology",
-                ["Arts, Science, Education & Information Technology"] = "BS in Biology,BS in Computer Science,BS in Education,BS in Elementary Education,BS in Entertainment and Multimedia Computing,BS in Information Systems,BS in Information Technology,BS in Psychology,BS in Secondary Education",
+                ["Arts, Science, Education & Information Technology"] = "BS in Information Technology,BS in Education,BS in Elementary Education,BS in Secondary Education",
                 ["Business, Management & Accountancy"] = "BS in Accountancy,BS in Accounting Information Systems,BS in Business Administration,BS in Hospitality Management,BS in Tourism Management",
                 ["Criminology"] = "BS in Criminology",
                 ["Engineering & Technology"] = "BS in Civil Engineering,BS in Electrical Engineering,BS in Mechanical Engineering",
