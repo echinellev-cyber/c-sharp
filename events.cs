@@ -26,6 +26,7 @@ namespace BiometricsFingerprint
         // UPDATED: Remove hardcoded fine amounts - get from event instead
         private int lateThresholdMinutes = 15; // From your settings table
         private int minimumSessionMinutes = 30; // NEW: Minimum time before allowed to time out
+        private string stationDepartmentFilter = ""; // e.g. "Medical Sciences" - only show events for this department
         // private bool _isTimerUpdate = false; // REMOVED: Flag for silent updates - bad pattern
         private bool _isLoading = false; // Flag to prevent overlapping async calls
 
@@ -587,7 +588,7 @@ namespace BiometricsFingerprint
         {
             try
             {
-                string query = "SELECT setting_name, setting_value FROM settings WHERE setting_name IN ('late_threshold_minutes', 'minimum_session_minutes')";
+                string query = "SELECT setting_name, setting_value FROM settings WHERE setting_name IN ('late_threshold_minutes', 'minimum_session_minutes', 'station_department')";
 
                 using (var connection = new MySqlConnection(connectionString))
                 using (var command = new MySqlCommand(query, connection))
@@ -598,7 +599,7 @@ namespace BiometricsFingerprint
                         while (reader.Read())
                         {
                             string settingName = reader["setting_name"].ToString();
-                            string settingValue = reader["setting_value"].ToString();
+                            string settingValue = reader["setting_value"]?.ToString()?.Trim() ?? "";
 
                             switch (settingName)
                             {
@@ -607,6 +608,9 @@ namespace BiometricsFingerprint
                                     break;
                                 case "minimum_session_minutes":
                                     minimumSessionMinutes = int.Parse(settingValue);
+                                    break;
+                                case "station_department":
+                                    stationDepartmentFilter = settingValue;
                                     break;
                             }
                         }
@@ -986,6 +990,10 @@ namespace BiometricsFingerprint
 
                             // When allowed_course is empty, use creator's department (CASE-IT for Arts & Sciences, etc.)
                             string courseDisplay = GetCourseDisplayForDropdown(allowedCourse, creatorDept);
+                            // Filter by station department: if set, only show events for that department
+                            if (!string.IsNullOrWhiteSpace(stationDepartmentFilter) &&
+                                !string.Equals(courseDisplay, stationDepartmentFilter.Trim(), StringComparison.OrdinalIgnoreCase))
+                                continue;
                             string displayText = $"{eventName} - {courseDisplay} - {eventDate:MMM dd, yyyy} ({startTime:hh\\:mm} - {endTime:hh\\:mm}) - {location}";
 
                             comboBox1.Items.Add(new EventItem(
