@@ -1644,16 +1644,23 @@ namespace BiometricsFingerprint
             }
         }
 
-        // Helper: Format year level for display in messages ("5" -> "5th year", "4th Year" -> "4th year")
+        // Helper: Format year level for display in messages ("5" -> "5th year student", "4" -> "4th year")
         private string GetYearLevelDisplayForMessage(string yearLevel)
         {
             if (string.IsNullOrWhiteSpace(yearLevel)) return yearLevel ?? "";
-            string y = yearLevel.Trim().ToLower();
-            if (y.Contains("1st") || y == "1") return "1st year";
-            if (y.Contains("2nd") || y == "2") return "2nd year";
-            if (y.Contains("3rd") || y == "3") return "3rd year";
-            if (y.Contains("4th") || y == "4") return "4th year";
-            if (y.Contains("5th") || y == "5") return "5th year";
+            string y = yearLevel.Trim();
+            // Handle numeric-only (e.g. "5", "4")
+            if (y == "1") return "1st year";
+            if (y == "2") return "2nd year";
+            if (y == "3") return "3rd year";
+            if (y == "4") return "4th year";
+            if (y == "5") return "5th year";
+            string yLower = y.ToLower();
+            if (yLower.Contains("1st")) return "1st year";
+            if (yLower.Contains("2nd")) return "2nd year";
+            if (yLower.Contains("3rd")) return "3rd year";
+            if (yLower.Contains("4th")) return "4th year";
+            if (yLower.Contains("5th")) return "5th year";
             return yearLevel;
         }
 
