@@ -1427,10 +1427,12 @@ namespace BiometricsFingerprint
                     // Check year level restriction (with normalized comparison for "4" vs "4th Year" etc.)
                     if (!string.IsNullOrEmpty(eventYearLevel) && !YearLevelsMatch(studentYearLevel, eventYearLevel))
                     {
-                        // Show friendly restriction message
+                        // Show friendly restriction message (format "5" -> "5th year student")
+                        string eventYearDisplay = GetYearLevelDisplayForMessage(eventYearLevel);
+                        string studentYearDisplay = GetYearLevelDisplayForMessage(studentYearLevel);
                         string message = $"📚 Event Access Notice\n\n" +
-                                       $"This event is specifically for {eventYearLevel} students.\n" +
-                                       $"You are currently enrolled as a {studentYearLevel} student.\n\n" +
+                                       $"This event is specifically for {eventYearDisplay} students.\n" +
+                                       $"You are currently enrolled as a {studentYearDisplay} student.\n\n" +
                                        $"If you believe this is a mistake or have special permission,\n" +
                                        $"please see the event organizer for assistance.";
 
@@ -1640,6 +1642,19 @@ namespace BiometricsFingerprint
             {
                 MakeReport($"[{scannerId}] Error recording attendance: {ex.Message}");
             }
+        }
+
+        // Helper: Format year level for display in messages ("5" -> "5th year", "4th Year" -> "4th year")
+        private string GetYearLevelDisplayForMessage(string yearLevel)
+        {
+            if (string.IsNullOrWhiteSpace(yearLevel)) return yearLevel ?? "";
+            string y = yearLevel.Trim().ToLower();
+            if (y.Contains("1st") || y == "1") return "1st year";
+            if (y.Contains("2nd") || y == "2") return "2nd year";
+            if (y.Contains("3rd") || y == "3") return "3rd year";
+            if (y.Contains("4th") || y == "4") return "4th year";
+            if (y.Contains("5th") || y == "5") return "5th year";
+            return yearLevel;
         }
 
         // Helper: Normalize year level for comparison (handles "4" vs "4th Year", "3" vs "3rd Year", etc.)
