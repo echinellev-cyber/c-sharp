@@ -977,7 +977,8 @@ namespace BiometricsFingerprint
                             count++;
                             string eventName = reader["event_name"].ToString();
                             string allowedCourse = useAllowedCourse ? reader["allowed_course"]?.ToString() : "";
-                            string creatorDept = reader["creator_department"]?.ToString()?.Trim();
+                            string creatorDept = "";
+                            try { creatorDept = reader["creator_department"]?.ToString()?.Trim() ?? ""; } catch { }
                             DateTime eventDate = Convert.ToDateTime(reader["date"]);
                             TimeSpan startTime = (TimeSpan)reader["start_time"];
                             TimeSpan endTime = (TimeSpan)reader["end_time"];
@@ -1676,14 +1677,13 @@ namespace BiometricsFingerprint
         }
 
         // Helper: Get short display for event dropdown (CASE-IT for Arts & Sciences, EPT for Engineering, etc.)
-        // When allowedCourse is empty, use creatorDept from JOIN; default CASE-IT when unknown (typical for this institution)
         private string GetCourseDisplayForDropdown(string allowedCourse, string creatorDept)
         {
             if (string.IsNullOrWhiteSpace(allowedCourse))
             {
                 if (!string.IsNullOrWhiteSpace(creatorDept))
                     return GetDepartmentDisplayForDropdown(creatorDept);
-                return "CASE-IT"; // Default when creator has no department (e.g. super_admin)
+                return "CASE-IT";
             }
             string lower = allowedCourse.Trim().ToLower();
             if (lower.Contains("nursing") || lower.Contains("midwifery")) return "Medical Sciences";
@@ -1698,7 +1698,7 @@ namespace BiometricsFingerprint
 
         private string GetDepartmentDisplayForDropdown(string department)
         {
-            if (string.IsNullOrWhiteSpace(department)) return "All Courses";
+            if (string.IsNullOrWhiteSpace(department)) return "CASE-IT";
             string d = department.Trim();
             if (d.IndexOf("Engineering", StringComparison.OrdinalIgnoreCase) >= 0 && d.IndexOf("Information", StringComparison.OrdinalIgnoreCase) < 0) return "EPT";
             if (d.IndexOf("Medical", StringComparison.OrdinalIgnoreCase) >= 0) return "Medical Sciences";
