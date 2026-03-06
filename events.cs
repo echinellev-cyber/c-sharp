@@ -939,13 +939,15 @@ namespace BiometricsFingerprint
                 {
                     connection.Open();
 
-                    // Try with allowed_course and created_by; fall back if column doesn't exist yet
-                    string queryWithCourse = @"SELECT ae.event_id, ae.event_name, ae.allowed_course, ae.date, ae.start_time, ae.end_time, ae.location, ae.created_by 
+                    // Try with allowed_course; JOIN admin to get creator's department when allowed_course is empty
+                    string queryWithCourse = @"SELECT ae.event_id, ae.event_name, ae.allowed_course, ae.date, ae.start_time, ae.end_time, ae.location, a.department as creator_department 
                                 FROM admin_event ae 
+                                LEFT JOIN admin a ON ae.created_by = a.admin_id 
                                 WHERE (ae.status != 'Completed' OR ae.status IS NULL) 
                                 ORDER BY ae.date DESC, ae.start_time DESC";
-                    string queryWithoutCourse = @"SELECT ae.event_id, ae.event_name, ae.date, ae.start_time, ae.end_time, ae.location, ae.created_by 
+                    string queryWithoutCourse = @"SELECT ae.event_id, ae.event_name, ae.date, ae.start_time, ae.end_time, ae.location, a.department as creator_department 
                                 FROM admin_event ae 
+                                LEFT JOIN admin a ON ae.created_by = a.admin_id 
                                 WHERE (ae.status != 'Completed' OR ae.status IS NULL) 
                                 ORDER BY ae.date DESC, ae.start_time DESC";
 
@@ -975,14 +977,14 @@ namespace BiometricsFingerprint
                             count++;
                             string eventName = reader["event_name"].ToString();
                             string allowedCourse = useAllowedCourse ? reader["allowed_course"]?.ToString() : "";
-                            int? createdBy = reader["created_by"] != DBNull.Value && reader["created_by"] != null ? Convert.ToInt32(reader["created_by"]) : (int?)null;
+                            string creatorDept = reader["creator_department"]?.ToString()?.Trim();
                             DateTime eventDate = Convert.ToDateTime(reader["date"]);
                             TimeSpan startTime = (TimeSpan)reader["start_time"];
                             TimeSpan endTime = (TimeSpan)reader["end_time"];
                             string location = reader["location"].ToString();
 
-                            // When allowed_course is empty, infer from creator's department
-                            string courseDisplay = GetCourseDisplayForDropdown(allowedCourse, createdBy, connection);
+                            // When allowed_course is empty, use creator's department (CASE-IT for Arts & Sciences, etc.)
+                            string courseDisplay = GetCourseDisplayForDropdown(allowedCourse, creatorDept);
                             string displayText = $"{eventName} - {courseDisplay} - {eventDate:MMM dd, yyyy} ({startTime:hh\\:mm} - {endTime:hh\\:mm}) - {location}";
 
                             comboBox1.Items.Add(new EventItem(
@@ -1674,25 +1676,15 @@ namespace BiometricsFingerprint
         }
 
         // Helper: Get short display for event dropdown (CASE-IT for Arts & Sciences, EPT for Engineering, etc.)
-        // When allowedCourse is empty, infer from creator's department via createdBy
-        private string GetCourseDisplayForDropdown(string allowedCourse, int? createdBy, MySqlConnection connection)
+        // When allowedCourse is empty, use creatorDept from JOIN; default CASE-IT when unknown (typical for this institution)
+        private string GetCourseDisplayForDropdown(string allowedCourse, string creatorDept)
         {
-            if (string.IsNullOrWhiteSpace(allowedCourse) && createdBy.HasValue && connection != null)
+            if (string.IsNullOrWhiteSpace(allowedCourse))
             {
-                try
-                {
-                    using (var cmd = new MySqlCommand("SELECT department FROM admin WHERE admin_id = @id", connection))
-                    {
-                        cmd.Parameters.AddWithValue("@id", createdBy.Value);
-                        object dept = cmd.ExecuteScalar();
-                        string creatorDept = dept?.ToString()?.Trim();
-                        if (!string.IsNullOrWhiteSpace(creatorDept))
-                            return GetDepartmentDisplayForDropdown(creatorDept);
-                    }
-                }
-                catch { /* ignore */ }
+                if (!string.IsNullOrWhiteSpace(creatorDept))
+                    return GetDepartmentDisplayForDropdown(creatorDept);
+                return "CASE-IT"; // Default when creator has no department (e.g. super_admin)
             }
-            if (string.IsNullOrWhiteSpace(allowedCourse)) return "All Courses";
             string lower = allowedCourse.Trim().ToLower();
             if (lower.Contains("nursing") || lower.Contains("midwifery")) return "Medical Sciences";
             if (lower.Contains("civil") || lower.Contains("electrical") || lower.Contains("mechanical")) return "EPT";
