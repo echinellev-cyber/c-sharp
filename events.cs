@@ -941,6 +941,37 @@ namespace BiometricsFingerprint
         }
 
         // Modify the LoadEvents method to only show active events
+        private string FormatTimeForDisplay(object value)
+        {
+            if (value == null || value == DBNull.Value) return "--:--";
+
+            // Handles MySQL TIME mapped as TimeSpan, DateTime, or string.
+            if (value is TimeSpan ts) return ts.ToString(@"hh\:mm");
+            if (value is DateTime dt) return dt.ToString("hh:mm tt");
+
+            string raw = value.ToString()?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(raw)) return "--:--";
+
+            if (TimeSpan.TryParse(raw, out TimeSpan parsedTs))
+                return parsedTs.ToString(@"hh\:mm");
+
+            if (DateTime.TryParse(raw, out DateTime parsedDt))
+                return parsedDt.ToString("hh:mm tt");
+
+            return raw;
+        }
+
+        private string FormatDateForDisplay(object value)
+        {
+            if (value == null || value == DBNull.Value) return "Unknown Date";
+            if (value is DateTime dt) return dt.ToString("MMM dd, yyyy");
+
+            string raw = value.ToString()?.Trim() ?? "";
+            if (DateTime.TryParse(raw, out DateTime parsedDt))
+                return parsedDt.ToString("MMM dd, yyyy");
+            return raw;
+        }
+
         private List<EventItem> ExecuteEventLoadQuery(MySqlConnection connection, bool includeStatusFilter, bool useAllowedCourse)
         {
             string queryWithCourseFiltered = @"SELECT ae.event_id, ae.event_name, ae.allowed_course, ae.date, ae.start_time, ae.end_time, ae.location, a.department as creator_department
@@ -978,18 +1009,26 @@ namespace BiometricsFingerprint
             {
                 while (reader.Read())
                 {
-                    string eventName = reader["event_name"].ToString();
-                    string allowedCourse = useAllowedCourse ? reader["allowed_course"]?.ToString() : "";
-                    string creatorDept = "";
-                    try { creatorDept = reader["creator_department"]?.ToString()?.Trim() ?? ""; } catch { }
-                    DateTime eventDate = Convert.ToDateTime(reader["date"]);
-                    TimeSpan startTime = (TimeSpan)reader["start_time"];
-                    TimeSpan endTime = (TimeSpan)reader["end_time"];
-                    string location = reader["location"].ToString();
+                    try
+                    {
+                        int eventId = Convert.ToInt32(reader["event_id"]);
+                        string eventName = reader["event_name"]?.ToString() ?? $"Event #{eventId}";
+                        string allowedCourse = useAllowedCourse ? reader["allowed_course"]?.ToString() : "";
+                        string creatorDept = "";
+                        try { creatorDept = reader["creator_department"]?.ToString()?.Trim() ?? ""; } catch { }
+                        string eventDate = FormatDateForDisplay(reader["date"]);
+                        string startTime = FormatTimeForDisplay(reader["start_time"]);
+                        string endTime = FormatTimeForDisplay(reader["end_time"]);
+                        string location = reader["location"]?.ToString() ?? "";
 
-                    string courseDisplay = GetCourseDisplayForDropdown(allowedCourse, creatorDept);
-                    string displayText = $"{eventName} - {courseDisplay} - {eventDate:MMM dd, yyyy} ({startTime:hh\\:mm} - {endTime:hh\\:mm}) - {location}";
-                    events.Add(new EventItem(Convert.ToInt32(reader["event_id"]), displayText, courseDisplay));
+                        string courseDisplay = GetCourseDisplayForDropdown(allowedCourse, creatorDept);
+                        string displayText = $"{eventName} - {courseDisplay} - {eventDate} ({startTime} - {endTime}) - {location}";
+                        events.Add(new EventItem(eventId, displayText, courseDisplay));
+                    }
+                    catch (Exception rowEx)
+                    {
+                        MakeReport($"Skipped one event row due to parsing issue: {rowEx.Message}");
+                    }
                 }
             }
 
@@ -1016,12 +1055,12 @@ namespace BiometricsFingerprint
                         useAllowedCourse = false;
                     }
 
-                    var allEvents = ExecuteEventLoadQuery(connection, includeStatusFilter: true, useAllowedCourse: useAllowedCourse);
+                    // Mirror admin/events.php behavior first: show all events ordered by date/time.
+                    var allEvents = ExecuteEventLoadQuery(connection, includeStatusFilter: false, useAllowedCourse: useAllowedCourse);
                     if (allEvents.Count == 0)
                     {
-                        allEvents = ExecuteEventLoadQuery(connection, includeStatusFilter: false, useAllowedCourse: useAllowedCourse);
-                        if (allEvents.Count > 0)
-                            MakeReport("No active events matched status filter. Showing all events.");
+                        // Fallback for older logic where status might be expected.
+                        allEvents = ExecuteEventLoadQuery(connection, includeStatusFilter: true, useAllowedCourse: useAllowedCourse);
                     }
 
                     var filteredEvents = allEvents
@@ -1049,10 +1088,12 @@ namespace BiometricsFingerprint
                     if (allEvents.Count == 0)
                     {
                         MakeReport("No events found in admin_event.");
+                        Prompt.Text = "No events found";
                     }
                     else
                     {
                         MakeReport($"Loaded {filteredEvents.Count} visible event(s) from {allEvents.Count} total event(s).");
+                        Prompt.Text = $"Loaded events: {filteredEvents.Count}/{allEvents.Count}";
                     }
                 }
             }
