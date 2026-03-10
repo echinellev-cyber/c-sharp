@@ -30,6 +30,7 @@ namespace BiometricsFingerprint
         private string stationDepartmentFilter = ""; // e.g. "Medical Sciences" - only show events for this department
         // private bool _isTimerUpdate = false; // REMOVED: Flag for silent updates - bad pattern
         private bool _isLoading = false; // Flag to prevent overlapping async calls
+        private readonly List<int> eventIdByComboIndex = new List<int>();
 
         public events()
         {
@@ -1075,12 +1076,18 @@ namespace BiometricsFingerprint
                         MakeReport($"No events matched station filter '{stationDepartmentFilter}'. Showing all active events.");
                     }
 
+                    // Use plain string items for maximum WinForms compatibility.
                     comboBox1.DataSource = null;
-                    comboBox1.DisplayMember = nameof(EventItem.DisplayText);
-                    comboBox1.ValueMember = nameof(EventItem.EventId);
-                    comboBox1.DataSource = filteredEvents;
+                    comboBox1.Items.Clear();
+                    eventIdByComboIndex.Clear();
 
-                    if (filteredEvents.Count > 0)
+                    foreach (var evt in filteredEvents)
+                    {
+                        comboBox1.Items.Add(evt.DisplayText);
+                        eventIdByComboIndex.Add(evt.EventId);
+                    }
+
+                    if (comboBox1.Items.Count > 0)
                     {
                         comboBox1.SelectedIndex = 0;
                     }
@@ -2056,31 +2063,19 @@ namespace BiometricsFingerprint
             {
                 return (int)this.Invoke(new Func<int>(() =>
                 {
-                    if (comboBox1.SelectedValue is int selectedValue)
+                    int selectedIndex = comboBox1.SelectedIndex;
+                    if (selectedIndex >= 0 && selectedIndex < eventIdByComboIndex.Count)
                     {
-                        return selectedValue;
-                    }
-
-                    if (comboBox1.SelectedValue != null && int.TryParse(comboBox1.SelectedValue.ToString(), out int parsedValue))
-                    {
-                        return parsedValue;
-                    }
-
-                    if (comboBox1.SelectedItem is EventItem selectedEvent)
-                    {
-                        return selectedEvent.EventId;
+                        return eventIdByComboIndex[selectedIndex];
                     }
                     return -1;
                 }));
             }
             else
             {
-                if (comboBox1.SelectedValue is int selectedValue)
-                    return selectedValue;
-                if (comboBox1.SelectedValue != null && int.TryParse(comboBox1.SelectedValue.ToString(), out int parsedValue))
-                    return parsedValue;
-                if (comboBox1.SelectedItem is EventItem selectedEvent)
-                    return selectedEvent.EventId;
+                int selectedIndex = comboBox1.SelectedIndex;
+                if (selectedIndex >= 0 && selectedIndex < eventIdByComboIndex.Count)
+                    return eventIdByComboIndex[selectedIndex];
                 return -1;
             }
         }
