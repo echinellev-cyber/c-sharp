@@ -979,12 +979,13 @@ namespace BiometricsFingerprint
                     using (MySqlCommand command = new MySqlCommand(query, connection))
                     using (MySqlDataReader reader = command.ExecuteReader())
                     {
-                        comboBox1.Items.Clear();
-                        int count = 0;
+                        var allEvents = new List<EventItem>();
+                        var filteredEvents = new List<EventItem>();
+                        int totalCount = 0;
 
                         while (reader.Read())
                         {
-                            count++;
+                            totalCount++;
                             string eventName = reader["event_name"].ToString();
                             string allowedCourse = useAllowedCourse ? reader["allowed_course"]?.ToString() : "";
                             string creatorDept = "";
@@ -996,25 +997,46 @@ namespace BiometricsFingerprint
 
                             // When allowed_course is empty, use creator's department (CASE-IT for Arts & Sciences, etc.)
                             string courseDisplay = GetCourseDisplayForDropdown(allowedCourse, creatorDept);
-                            // Filter by station department: if set, only show events for that department
-                            if (!string.IsNullOrWhiteSpace(stationDepartmentFilter) &&
-                                !string.Equals(courseDisplay, stationDepartmentFilter.Trim(), StringComparison.OrdinalIgnoreCase))
-                                continue;
                             string displayText = $"{eventName} - {courseDisplay} - {eventDate:MMM dd, yyyy} ({startTime:hh\\:mm} - {endTime:hh\\:mm}) - {location}";
 
-                            comboBox1.Items.Add(new EventItem(
+                            var eventItem = new EventItem(
                                 Convert.ToInt32(reader["event_id"]),
                                 displayText
-                            ));
+                            );
+                            allEvents.Add(eventItem);
+
+                            // Filter by station department if configured.
+                            if (string.IsNullOrWhiteSpace(stationDepartmentFilter) ||
+                                string.Equals(courseDisplay, stationDepartmentFilter.Trim(), StringComparison.OrdinalIgnoreCase))
+                            {
+                                filteredEvents.Add(eventItem);
+                            }
                         }
 
-                        if (count == 0)
+                        // If station filter excludes everything, show all events so dropdown is never blank.
+                        if (!string.IsNullOrWhiteSpace(stationDepartmentFilter) && filteredEvents.Count == 0 && allEvents.Count > 0)
+                        {
+                            filteredEvents = allEvents;
+                            MakeReport($"No events matched station filter '{stationDepartmentFilter}'. Showing all active events.");
+                        }
+
+                        comboBox1.DataSource = null;
+                        comboBox1.DisplayMember = nameof(EventItem.DisplayText);
+                        comboBox1.ValueMember = nameof(EventItem.EventId);
+                        comboBox1.DataSource = filteredEvents;
+
+                        if (filteredEvents.Count > 0)
+                        {
+                            comboBox1.SelectedIndex = 0;
+                        }
+
+                        if (totalCount == 0)
                         {
                             MakeReport("No active events found. Create events in the admin panel (Events Management) or ensure existing events are not marked as Completed.");
                         }
                         else
                         {
-                            MakeReport($"Loaded {count} event(s)");
+                            MakeReport($"Loaded {filteredEvents.Count} visible event(s) from {totalCount} active event(s).");
                         }
                     }
                 }
@@ -1976,6 +1998,16 @@ namespace BiometricsFingerprint
             {
                 return (int)this.Invoke(new Func<int>(() =>
                 {
+                    if (comboBox1.SelectedValue is int selectedValue)
+                    {
+                        return selectedValue;
+                    }
+
+                    if (comboBox1.SelectedValue != null && int.TryParse(comboBox1.SelectedValue.ToString(), out int parsedValue))
+                    {
+                        return parsedValue;
+                    }
+
                     if (comboBox1.SelectedItem is EventItem selectedEvent)
                     {
                         return selectedEvent.EventId;
@@ -1985,6 +2017,10 @@ namespace BiometricsFingerprint
             }
             else
             {
+                if (comboBox1.SelectedValue is int selectedValue)
+                    return selectedValue;
+                if (comboBox1.SelectedValue != null && int.TryParse(comboBox1.SelectedValue.ToString(), out int parsedValue))
+                    return parsedValue;
                 if (comboBox1.SelectedItem is EventItem selectedEvent)
                     return selectedEvent.EventId;
                 return -1;
@@ -2206,6 +2242,10 @@ namespace BiometricsFingerprint
             // Set comboBox properties
             comboBox1.DropDownStyle = ComboBoxStyle.DropDownList;
             comboBox1.DropDownHeight = 200;
+            comboBox1.BackColor = Color.White;
+            comboBox1.ForeColor = Color.Black;
+            comboBox1.SelectedIndexChanged -= comboBox1_SelectedIndexChanged;
+            comboBox1.SelectedIndexChanged += comboBox1_SelectedIndexChanged;
 
             // Setup timer for auto-refresh
             timer1.Interval = 1000; // 1 second
