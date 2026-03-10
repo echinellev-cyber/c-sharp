@@ -1102,6 +1102,12 @@ namespace BiometricsFingerprint
                         MakeReport($"Loaded {filteredEvents.Count} visible event(s) from {allEvents.Count} total event(s).");
                         Prompt.Text = $"Loaded events: {filteredEvents.Count}/{allEvents.Count}";
                     }
+
+                    // Raw debug output (not filtered) to confirm loader actually ran.
+                    if (StatusText != null && !StatusText.IsDisposed)
+                    {
+                        StatusText.AppendText($"{DateTime.Now:HH:mm:ss} - [DEBUG] Dropdown items loaded: {comboBox1.Items.Count}\r\n");
+                    }
                 }
             }
             catch (Exception ex)
@@ -2094,6 +2100,23 @@ namespace BiometricsFingerprint
             }
         }
 
+        private void comboBox1_DrawItem(object sender, DrawItemEventArgs e)
+        {
+            e.DrawBackground();
+            if (e.Index >= 0 && e.Index < comboBox1.Items.Count)
+            {
+                string text = comboBox1.Items[e.Index]?.ToString() ?? "";
+                Color textColor = (e.State & DrawItemState.Selected) == DrawItemState.Selected
+                    ? Color.White
+                    : Color.Black;
+                using (var brush = new SolidBrush(textColor))
+                {
+                    e.Graphics.DrawString(text, e.Font, brush, e.Bounds);
+                }
+            }
+            e.DrawFocusRectangle();
+        }
+
         // FIXED: LoadAttendanceData method with better error handling and debugging
         private async Task LoadAttendanceData(int eventId, bool isSilent = false)
         {
@@ -2297,6 +2320,9 @@ namespace BiometricsFingerprint
             comboBox1.DropDownHeight = 200;
             comboBox1.BackColor = Color.White;
             comboBox1.ForeColor = Color.Black;
+            comboBox1.DrawMode = DrawMode.OwnerDrawFixed;
+            comboBox1.DrawItem -= comboBox1_DrawItem;
+            comboBox1.DrawItem += comboBox1_DrawItem;
             comboBox1.SelectedIndexChanged -= comboBox1_SelectedIndexChanged;
             comboBox1.SelectedIndexChanged += comboBox1_SelectedIndexChanged;
             LoadEvents();
