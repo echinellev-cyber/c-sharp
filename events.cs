@@ -2314,6 +2314,7 @@ namespace BiometricsFingerprint
         {
             this.WindowState = FormWindowState.Maximized;
             this.FormBorderStyle = FormBorderStyle.Sizable;
+            this.Text = "Student Attendance [BUILD 2026-03-10.4]";
 
             // Set comboBox properties
             comboBox1.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -2333,7 +2334,7 @@ namespace BiometricsFingerprint
             timer1.Tick += timer1_Tick;
             timer1.Start();
 
-            MakeReport("Events form loaded successfully. Auto-refresh enabled.");
+            MakeReport("Events form loaded successfully. Auto-refresh enabled. [BUILD 2026-03-10.4]");
         }
 
         // Add this empty method to satisfy the designer reference
