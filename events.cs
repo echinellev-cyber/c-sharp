@@ -941,6 +941,61 @@ namespace BiometricsFingerprint
         }
 
         // Modify the LoadEvents method to only show active events
+        private List<EventItem> ExecuteEventLoadQuery(MySqlConnection connection, bool includeStatusFilter, bool useAllowedCourse)
+        {
+            string queryWithCourseFiltered = @"SELECT ae.event_id, ae.event_name, ae.allowed_course, ae.date, ae.start_time, ae.end_time, ae.location, a.department as creator_department
+                                FROM admin_event ae
+                                LEFT JOIN admin a ON ae.created_by = a.admin_id
+                                WHERE (ae.status != 'Completed' OR ae.status IS NULL)
+                                ORDER BY ae.date DESC, ae.start_time DESC";
+            string queryWithCourseAll = @"SELECT ae.event_id, ae.event_name, ae.allowed_course, ae.date, ae.start_time, ae.end_time, ae.location, a.department as creator_department
+                                FROM admin_event ae
+                                LEFT JOIN admin a ON ae.created_by = a.admin_id
+                                ORDER BY ae.date DESC, ae.start_time DESC";
+            string queryWithoutCourseFiltered = @"SELECT ae.event_id, ae.event_name, ae.date, ae.start_time, ae.end_time, ae.location, a.department as creator_department
+                                FROM admin_event ae
+                                LEFT JOIN admin a ON ae.created_by = a.admin_id
+                                WHERE (ae.status != 'Completed' OR ae.status IS NULL)
+                                ORDER BY ae.date DESC, ae.start_time DESC";
+            string queryWithoutCourseAll = @"SELECT ae.event_id, ae.event_name, ae.date, ae.start_time, ae.end_time, ae.location, a.department as creator_department
+                                FROM admin_event ae
+                                LEFT JOIN admin a ON ae.created_by = a.admin_id
+                                ORDER BY ae.date DESC, ae.start_time DESC";
+
+            string query;
+            if (useAllowedCourse)
+            {
+                query = includeStatusFilter ? queryWithCourseFiltered : queryWithCourseAll;
+            }
+            else
+            {
+                query = includeStatusFilter ? queryWithoutCourseFiltered : queryWithoutCourseAll;
+            }
+
+            var events = new List<EventItem>();
+            using (MySqlCommand command = new MySqlCommand(query, connection))
+            using (MySqlDataReader reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    string eventName = reader["event_name"].ToString();
+                    string allowedCourse = useAllowedCourse ? reader["allowed_course"]?.ToString() : "";
+                    string creatorDept = "";
+                    try { creatorDept = reader["creator_department"]?.ToString()?.Trim() ?? ""; } catch { }
+                    DateTime eventDate = Convert.ToDateTime(reader["date"]);
+                    TimeSpan startTime = (TimeSpan)reader["start_time"];
+                    TimeSpan endTime = (TimeSpan)reader["end_time"];
+                    string location = reader["location"].ToString();
+
+                    string courseDisplay = GetCourseDisplayForDropdown(allowedCourse, creatorDept);
+                    string displayText = $"{eventName} - {courseDisplay} - {eventDate:MMM dd, yyyy} ({startTime:hh\\:mm} - {endTime:hh\\:mm}) - {location}";
+                    events.Add(new EventItem(Convert.ToInt32(reader["event_id"]), displayText, courseDisplay));
+                }
+            }
+
+            return events;
+        }
+
         private void LoadEvents()
         {
             try
@@ -948,19 +1003,6 @@ namespace BiometricsFingerprint
                 using (MySqlConnection connection = new MySqlConnection(connectionString))
                 {
                     connection.Open();
-
-                    // Try with allowed_course; JOIN admin to get creator's department when allowed_course is empty
-                    string queryWithCourse = @"SELECT ae.event_id, ae.event_name, ae.allowed_course, ae.date, ae.start_time, ae.end_time, ae.location, a.department as creator_department 
-                                FROM admin_event ae 
-                                LEFT JOIN admin a ON ae.created_by = a.admin_id 
-                                WHERE (ae.status != 'Completed' OR ae.status IS NULL) 
-                                ORDER BY ae.date DESC, ae.start_time DESC";
-                    string queryWithoutCourse = @"SELECT ae.event_id, ae.event_name, ae.date, ae.start_time, ae.end_time, ae.location, a.department as creator_department 
-                                FROM admin_event ae 
-                                LEFT JOIN admin a ON ae.created_by = a.admin_id 
-                                WHERE (ae.status != 'Completed' OR ae.status IS NULL) 
-                                ORDER BY ae.date DESC, ae.start_time DESC";
-
                     bool useAllowedCourse = true;
                     try
                     {
@@ -974,70 +1016,43 @@ namespace BiometricsFingerprint
                         useAllowedCourse = false;
                     }
 
-                    string query = useAllowedCourse ? queryWithCourse : queryWithoutCourse;
-
-                    using (MySqlCommand command = new MySqlCommand(query, connection))
-                    using (MySqlDataReader reader = command.ExecuteReader())
+                    var allEvents = ExecuteEventLoadQuery(connection, includeStatusFilter: true, useAllowedCourse: useAllowedCourse);
+                    if (allEvents.Count == 0)
                     {
-                        var allEvents = new List<EventItem>();
-                        var filteredEvents = new List<EventItem>();
-                        int totalCount = 0;
+                        allEvents = ExecuteEventLoadQuery(connection, includeStatusFilter: false, useAllowedCourse: useAllowedCourse);
+                        if (allEvents.Count > 0)
+                            MakeReport("No active events matched status filter. Showing all events.");
+                    }
 
-                        while (reader.Read())
-                        {
-                            totalCount++;
-                            string eventName = reader["event_name"].ToString();
-                            string allowedCourse = useAllowedCourse ? reader["allowed_course"]?.ToString() : "";
-                            string creatorDept = "";
-                            try { creatorDept = reader["creator_department"]?.ToString()?.Trim() ?? ""; } catch { }
-                            DateTime eventDate = Convert.ToDateTime(reader["date"]);
-                            TimeSpan startTime = (TimeSpan)reader["start_time"];
-                            TimeSpan endTime = (TimeSpan)reader["end_time"];
-                            string location = reader["location"].ToString();
+                    var filteredEvents = allEvents
+                        .Where(e => string.IsNullOrWhiteSpace(stationDepartmentFilter) ||
+                                    string.Equals(e.CourseDisplay, stationDepartmentFilter.Trim(), StringComparison.OrdinalIgnoreCase))
+                        .ToList();
 
-                            // When allowed_course is empty, use creator's department (CASE-IT for Arts & Sciences, etc.)
-                            string courseDisplay = GetCourseDisplayForDropdown(allowedCourse, creatorDept);
-                            string displayText = $"{eventName} - {courseDisplay} - {eventDate:MMM dd, yyyy} ({startTime:hh\\:mm} - {endTime:hh\\:mm}) - {location}";
+                    // If station filter excludes everything, show all events so dropdown is never blank.
+                    if (!string.IsNullOrWhiteSpace(stationDepartmentFilter) && filteredEvents.Count == 0 && allEvents.Count > 0)
+                    {
+                        filteredEvents = allEvents;
+                        MakeReport($"No events matched station filter '{stationDepartmentFilter}'. Showing all active events.");
+                    }
 
-                            var eventItem = new EventItem(
-                                Convert.ToInt32(reader["event_id"]),
-                                displayText
-                            );
-                            allEvents.Add(eventItem);
+                    comboBox1.DataSource = null;
+                    comboBox1.DisplayMember = nameof(EventItem.DisplayText);
+                    comboBox1.ValueMember = nameof(EventItem.EventId);
+                    comboBox1.DataSource = filteredEvents;
 
-                            // Filter by station department if configured.
-                            if (string.IsNullOrWhiteSpace(stationDepartmentFilter) ||
-                                string.Equals(courseDisplay, stationDepartmentFilter.Trim(), StringComparison.OrdinalIgnoreCase))
-                            {
-                                filteredEvents.Add(eventItem);
-                            }
-                        }
+                    if (filteredEvents.Count > 0)
+                    {
+                        comboBox1.SelectedIndex = 0;
+                    }
 
-                        // If station filter excludes everything, show all events so dropdown is never blank.
-                        if (!string.IsNullOrWhiteSpace(stationDepartmentFilter) && filteredEvents.Count == 0 && allEvents.Count > 0)
-                        {
-                            filteredEvents = allEvents;
-                            MakeReport($"No events matched station filter '{stationDepartmentFilter}'. Showing all active events.");
-                        }
-
-                        comboBox1.DataSource = null;
-                        comboBox1.DisplayMember = nameof(EventItem.DisplayText);
-                        comboBox1.ValueMember = nameof(EventItem.EventId);
-                        comboBox1.DataSource = filteredEvents;
-
-                        if (filteredEvents.Count > 0)
-                        {
-                            comboBox1.SelectedIndex = 0;
-                        }
-
-                        if (totalCount == 0)
-                        {
-                            MakeReport("No active events found. Create events in the admin panel (Events Management) or ensure existing events are not marked as Completed.");
-                        }
-                        else
-                        {
-                            MakeReport($"Loaded {filteredEvents.Count} visible event(s) from {totalCount} active event(s).");
-                        }
+                    if (allEvents.Count == 0)
+                    {
+                        MakeReport("No events found in admin_event.");
+                    }
+                    else
+                    {
+                        MakeReport($"Loaded {filteredEvents.Count} visible event(s) from {allEvents.Count} total event(s).");
                     }
                 }
             }
@@ -1975,15 +1990,17 @@ namespace BiometricsFingerprint
             }
         }
 
-        private class EventItem
+        public class EventItem
         {
             public int EventId { get; set; }
             public string DisplayText { get; set; }
+            public string CourseDisplay { get; set; }
 
-            public EventItem(int eventId, string displayText)
+            public EventItem(int eventId, string displayText, string courseDisplay)
             {
                 EventId = eventId;
                 DisplayText = displayText;
+                CourseDisplay = courseDisplay ?? "";
             }
 
             public override string ToString()
@@ -2246,6 +2263,8 @@ namespace BiometricsFingerprint
             comboBox1.ForeColor = Color.Black;
             comboBox1.SelectedIndexChanged -= comboBox1_SelectedIndexChanged;
             comboBox1.SelectedIndexChanged += comboBox1_SelectedIndexChanged;
+            LoadEvents();
+            MakeReport($"Dropdown items available: {comboBox1.Items.Count}");
 
             // Setup timer for auto-refresh
             timer1.Interval = 1000; // 1 second
