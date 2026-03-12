@@ -978,7 +978,7 @@ namespace BiometricsFingerprint
             string queryWithCourseFiltered = @"SELECT ae.event_id, ae.event_name, ae.allowed_course, ae.date, ae.start_time, ae.end_time, ae.location, a.department as creator_department
                                 FROM admin_event ae
                                 LEFT JOIN admin a ON ae.created_by = a.admin_id
-                                WHERE (ae.status != 'Completed' OR ae.status IS NULL)
+                                WHERE (ae.status IS NULL OR TRIM(ae.status) = '' OR LOWER(TRIM(ae.status)) <> 'completed')
                                 ORDER BY ae.date DESC, ae.start_time DESC";
             string queryWithCourseAll = @"SELECT ae.event_id, ae.event_name, ae.allowed_course, ae.date, ae.start_time, ae.end_time, ae.location, a.department as creator_department
                                 FROM admin_event ae
@@ -987,7 +987,7 @@ namespace BiometricsFingerprint
             string queryWithoutCourseFiltered = @"SELECT ae.event_id, ae.event_name, ae.date, ae.start_time, ae.end_time, ae.location, a.department as creator_department
                                 FROM admin_event ae
                                 LEFT JOIN admin a ON ae.created_by = a.admin_id
-                                WHERE (ae.status != 'Completed' OR ae.status IS NULL)
+                                WHERE (ae.status IS NULL OR TRIM(ae.status) = '' OR LOWER(TRIM(ae.status)) <> 'completed')
                                 ORDER BY ae.date DESC, ae.start_time DESC";
             string queryWithoutCourseAll = @"SELECT ae.event_id, ae.event_name, ae.date, ae.start_time, ae.end_time, ae.location, a.department as creator_department
                                 FROM admin_event ae
@@ -1056,13 +1056,22 @@ namespace BiometricsFingerprint
                         useAllowedCourse = false;
                     }
 
-                    // Mirror admin/events.php behavior first: show all events ordered by date/time.
-                    var allEvents = ExecuteEventLoadQuery(connection, includeStatusFilter: false, useAllowedCourse: useAllowedCourse);
-                    if (allEvents.Count == 0)
+                    // Exclude completed events when status column exists.
+                    bool useStatusFilter = true;
+                    try
                     {
-                        // Fallback for older logic where status might be expected.
-                        allEvents = ExecuteEventLoadQuery(connection, includeStatusFilter: true, useAllowedCourse: useAllowedCourse);
+                        using (var statusCmd = new MySqlCommand("SELECT status FROM admin_event LIMIT 1", connection))
+                        {
+                            statusCmd.ExecuteScalar();
+                        }
                     }
+                    catch
+                    {
+                        // Older schemas may not have admin_event.status yet.
+                        useStatusFilter = false;
+                    }
+
+                    var allEvents = ExecuteEventLoadQuery(connection, includeStatusFilter: useStatusFilter, useAllowedCourse: useAllowedCourse);
 
                     var filteredEvents = allEvents
                         .Where(e => string.IsNullOrWhiteSpace(stationDepartmentFilter) ||
