@@ -925,14 +925,31 @@ namespace BiometricsFingerprint
         {
             try
             {
-                string query = "UPDATE admin_event SET status = 'Completed' WHERE event_id = @eventId";
+                // Mark selected event AND any accidental duplicate rows (same name/date/time/location)
+                // so the dropdown does not continue showing a visually identical copy.
+                string query = @"
+                    UPDATE admin_event ae
+                    JOIN (
+                        SELECT event_name, date, start_time, end_time, IFNULL(location, '') AS location_key
+                        FROM admin_event
+                        WHERE event_id = @eventId
+                        LIMIT 1
+                    ) src
+                    ON ae.event_name = src.event_name
+                    AND ae.date = src.date
+                    AND ae.start_time = src.start_time
+                    AND ae.end_time = src.end_time
+                    AND IFNULL(ae.location, '') = src.location_key
+                    SET ae.status = 'Completed'
+                    WHERE (ae.status IS NULL OR TRIM(ae.status) = '' OR LOWER(TRIM(ae.status)) <> 'completed')";
 
                 using (MySqlConnection connection = new MySqlConnection(connectionString))
                 using (MySqlCommand command = new MySqlCommand(query, connection))
                 {
                     connection.Open();
                     command.Parameters.AddWithValue("@eventId", eventId);
-                    command.ExecuteNonQuery();
+                    int affected = command.ExecuteNonQuery();
+                    MakeReport($"Marked completed rows: {affected} (selected event id: {eventId})");
                 }
             }
             catch (Exception ex)
